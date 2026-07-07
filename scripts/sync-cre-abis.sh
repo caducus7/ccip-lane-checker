@@ -3,7 +3,7 @@
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 SHARED="$ROOT/cre/lane-checker-cre/shared"
-for wf in round-scheduler hop-monitor settlement hop-sender; do
+for wf in round-scheduler hop-monitor settlement hop-sender sweep-unclaimed; do
   cp "$SHARED/lane-controller-abi.ts" "$ROOT/cre/lane-checker-cre/$wf/lane-controller-abi.ts"
   echo "synced lane-controller-abi.ts -> $wf"
 done

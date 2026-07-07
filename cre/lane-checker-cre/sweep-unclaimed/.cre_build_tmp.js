@@ -22961,6 +22961,47 @@ var laneControllerAbi = parseAbi([
   "event PrizesDistributed(uint256 indexed roundId, uint8 winnerLaneId, uint256 winnerPayout)",
   "event PrizeClaimed(uint256 indexed roundId, address indexed bettor, uint256 amount)"
 ]);
+var RoundState = {
+  Betting: 0,
+  Racing: 1,
+  Finished: 2,
+  Settled: 3
+};
+var NO_LANE = 255;
+function roundIdsToScan(currentRoundId, lookbackMaxRounds) {
+  if (currentRoundId === 0n || lookbackMaxRounds <= 0) {
+    return [];
+  }
+  const start = currentRoundId > BigInt(lookbackMaxRounds) ? currentRoundId - BigInt(lookbackMaxRounds) + 1n : 1n;
+  const ids = [];
+  for (let id = start;id <= currentRoundId; id++) {
+    ids.push(id);
+  }
+  return ids;
+}
+function isEligibleForSweep(input) {
+  if (input.roundState !== RoundState.Settled) {
+    return false;
+  }
+  if (input.winnerLaneId === NO_LANE) {
+    return false;
+  }
+  if (input.winnerFinishTime === 0n) {
+    return false;
+  }
+  const claimDeadline = input.winnerFinishTime + BigInt(input.claimWindowSeconds);
+  return input.nowSeconds >= claimDeadline;
+}
+function buildSweepResult(input) {
+  return JSON.stringify({
+    action: "sweep-unclaimed",
+    scheduledAt: input.scheduledAt,
+    claimWindowSeconds: input.claimWindowSeconds,
+    scanned: input.scanned,
+    swept: input.swept,
+    skipped: input.skipped
+  });
+}
 var resolveChainSelector = (config) => {
   const name = config.chainSelectorName ?? config.controllerChainSelectorName;
   if (!name) {
@@ -22995,56 +23036,127 @@ function createEvmClient(config) {
 function controllerAddress(config) {
   return config.laneControllerAddress;
 }
-function toSelectorBigints(paths) {
-  return paths.map((lane) => lane.map((selector) => BigInt(selector)));
-}
-function computeNextRoundId(currentRoundId) {
-  return currentRoundId + 1n;
-}
-function buildRoundSchedulerResult(input) {
-  return JSON.stringify({
-    action: "round-scheduled",
-    scheduledAt: input.scheduledAt,
-    createRoundTx: input.createRoundTx,
-    startRaceTx: input.startRaceTx,
-    roundId: input.roundId.toString(),
-    laneCount: input.laneCount
-  });
-}
-var onCronTrigger = (runtime2, payload) => {
+var readCurrentRoundId = (runtime2) => {
   const evmClient = createEvmClient(runtime2.config);
-  const lanePaths = toSelectorBigints(runtime2.config.lanePaths);
-  const scheduledAt = payload.scheduledExecutionTime?.seconds?.toString() ?? runtime2.now().toISOString();
-  runtime2.log(`round-scheduler fired at ${scheduledAt}`);
-  const currentRoundCall = encodeFunctionData({
+  const callData = encodeFunctionData({
     abi: laneControllerAbi,
     functionName: "currentRoundId"
   });
-  const roundResult = evmClient.callContract(runtime2, {
+  const result = evmClient.callContract(runtime2, {
     call: encodeCallMsg({
       from: zeroAddress,
       to: controllerAddress(runtime2.config),
-      data: currentRoundCall
+      data: callData
     }),
     blockNumber: LAST_FINALIZED_BLOCK_NUMBER
   }).result();
-  const previousRoundId = decodeFunctionResult({
+  return decodeFunctionResult({
     abi: laneControllerAbi,
     functionName: "currentRoundId",
-    data: bytesToHex3(roundResult.data)
+    data: bytesToHex3(result.data)
   });
-  const roundId = computeNextRoundId(previousRoundId);
-  const createTx = writeLaneController(runtime2, evmClient, laneControllerAbi, "createRound", [lanePaths]);
-  runtime2.log(`createRound tx=${createTx}, roundId=${roundId}`);
-  const startTx = writeLaneController(runtime2, evmClient, laneControllerAbi, "startRace", [roundId]);
-  const result = buildRoundSchedulerResult({
+};
+var readRoundState = (runtime2, roundId) => {
+  const evmClient = createEvmClient(runtime2.config);
+  const callData = encodeFunctionData({
+    abi: laneControllerAbi,
+    functionName: "getRoundState",
+    args: [roundId]
+  });
+  const result = evmClient.callContract(runtime2, {
+    call: encodeCallMsg({
+      from: zeroAddress,
+      to: controllerAddress(runtime2.config),
+      data: callData
+    }),
+    blockNumber: LAST_FINALIZED_BLOCK_NUMBER
+  }).result();
+  return Number(decodeFunctionResult({
+    abi: laneControllerAbi,
+    functionName: "getRoundState",
+    data: bytesToHex3(result.data)
+  }));
+};
+var readWinnerLaneId = (runtime2, roundId) => {
+  const evmClient = createEvmClient(runtime2.config);
+  const callData = encodeFunctionData({
+    abi: laneControllerAbi,
+    functionName: "getRoundWinner",
+    args: [roundId]
+  });
+  const result = evmClient.callContract(runtime2, {
+    call: encodeCallMsg({
+      from: zeroAddress,
+      to: controllerAddress(runtime2.config),
+      data: callData
+    }),
+    blockNumber: LAST_FINALIZED_BLOCK_NUMBER
+  }).result();
+  return Number(decodeFunctionResult({
+    abi: laneControllerAbi,
+    functionName: "getRoundWinner",
+    data: bytesToHex3(result.data)
+  }));
+};
+var readWinnerFinishTime = (runtime2, roundId, winnerLaneId) => {
+  const evmClient = createEvmClient(runtime2.config);
+  const callData = encodeFunctionData({
+    abi: laneControllerAbi,
+    functionName: "getLane",
+    args: [roundId, winnerLaneId]
+  });
+  const result = evmClient.callContract(runtime2, {
+    call: encodeCallMsg({
+      from: zeroAddress,
+      to: controllerAddress(runtime2.config),
+      data: callData
+    }),
+    blockNumber: LAST_FINALIZED_BLOCK_NUMBER
+  }).result();
+  const decoded = decodeFunctionResult({
+    abi: laneControllerAbi,
+    functionName: "getLane",
+    data: bytesToHex3(result.data)
+  });
+  return decoded[4];
+};
+var onCronTrigger = (runtime2, payload) => {
+  const scheduledAt = payload.scheduledExecutionTime?.seconds?.toString() ?? runtime2.now().toISOString();
+  runtime2.log(`sweep-unclaimed CRON fired at ${scheduledAt}`);
+  const currentRoundId = readCurrentRoundId(runtime2);
+  const roundIds = roundIdsToScan(currentRoundId, runtime2.config.lookbackMaxRounds);
+  const nowSeconds = BigInt(Math.floor(new Date(runtime2.now()).getTime() / 1000));
+  const evmClient = createEvmClient(runtime2.config);
+  const swept = [];
+  const skipped = [];
+  for (const roundId of roundIds) {
+    const roundState = readRoundState(runtime2, roundId);
+    const winnerLaneId = readWinnerLaneId(runtime2, roundId);
+    const winnerFinishTime = readWinnerFinishTime(runtime2, roundId, winnerLaneId);
+    if (!isEligibleForSweep({
+      roundState,
+      winnerLaneId,
+      winnerFinishTime,
+      nowSeconds,
+      claimWindowSeconds: runtime2.config.claimWindowSeconds
+    })) {
+      skipped.push({
+        roundId: roundId.toString(),
+        reason: roundState !== RoundState.Settled ? "not-settled-or-in-claim-window" : "not-eligible"
+      });
+      continue;
+    }
+    const tx = writeLaneController(runtime2, evmClient, laneControllerAbi, "sweepUnclaimed", [roundId]);
+    swept.push({ roundId: roundId.toString(), tx });
+  }
+  const result = buildSweepResult({
     scheduledAt,
-    createRoundTx: createTx,
-    startRaceTx: startTx,
-    roundId,
-    laneCount: lanePaths.length
+    claimWindowSeconds: runtime2.config.claimWindowSeconds,
+    scanned: roundIds.length,
+    swept,
+    skipped
   });
-  runtime2.log(`Round started: ${result}`);
+  runtime2.log(result);
   return result;
 };
 var initWorkflow = (config) => {

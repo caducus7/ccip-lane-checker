@@ -15,6 +15,7 @@ import {
 } from "viem";
 import { laneControllerAbi } from "./lane-controller-abi";
 import { createEvmClient, writeLaneController } from "./evm-write";
+import { buildSettlementResult } from "./logic";
 
 export type Config = {
   laneControllerAddress: string;
@@ -54,18 +55,16 @@ const onWinnerDeclared = (runtime: Runtime<Config>, log: EVMLog): string => {
     [roundId],
   );
 
-  const result = {
-    event: "WinnerDeclared",
-    action: "distributePrizes",
-    roundId: roundId.toString(),
+  const result = buildSettlementResult({
+    roundId,
     winnerLaneId: Number(laneId),
-    finishTime: finishTime.toString(),
-    distributePrizesTx: distributeTx,
+    finishTime,
+    distributeTx,
     txHash: bytesToHex(log.txHash),
-  };
+  });
 
-  runtime.log(`Prizes distributed: ${JSON.stringify(result)}`);
-  return JSON.stringify(result);
+  runtime.log(`Prizes distributed: ${result}`);
+  return result;
 };
 
 export const initWorkflow = (config: Config) => {

@@ -14,6 +14,10 @@ import {
   type Hex,
 } from "viem";
 import { laneControllerAbi } from "./lane-controller-abi";
+import {
+  buildHopCompletedResult,
+  buildLaneFinishedResult,
+} from "./logic";
 
 export type ChainConfig = {
   chainSelectorName: string;
@@ -65,18 +69,17 @@ const onHopCompleted = (runtime: Runtime<Config>, log: EVMLog): string => {
   const decoded = decodeHopCompleted(log);
   const { roundId, laneId, chainSelector, latency, hopIndex } = decoded.args;
 
-  const result = {
-    event: "HopCompleted",
-    roundId: roundId.toString(),
+  const result = buildHopCompletedResult({
+    roundId,
     laneId: Number(laneId),
-    chainSelector: chainSelector.toString(),
-    latency: latency.toString(),
+    chainSelector,
+    latency,
     hopIndex: Number(hopIndex),
     txHash: bytesToHex(log.txHash),
-  };
+  });
 
-  runtime.log(`HopCompleted: ${JSON.stringify(result)}`);
-  return JSON.stringify(result);
+  runtime.log(`HopCompleted: ${result}`);
+  return result;
 };
 
 const onLaneFinished = (runtime: Runtime<Config>, log: EVMLog): string => {
@@ -85,17 +88,15 @@ const onLaneFinished = (runtime: Runtime<Config>, log: EVMLog): string => {
 
   // recordHop auto-declares the first finisher and emits WinnerDeclared;
   // settlement workflow handles distributePrizes + sweepUnclaimed.
-  const result = {
-    event: "LaneFinished",
-    action: "tracked",
-    roundId: roundId.toString(),
+  const result = buildLaneFinishedResult({
+    roundId,
     laneId: Number(laneId),
-    finishTime: finishTime.toString(),
+    finishTime,
     txHash: bytesToHex(log.txHash),
-  };
+  });
 
-  runtime.log(`LaneFinished: ${JSON.stringify(result)}`);
-  return JSON.stringify(result);
+  runtime.log(`LaneFinished: ${result}`);
+  return result;
 };
 
 const chainSelector = (name: string): bigint => {

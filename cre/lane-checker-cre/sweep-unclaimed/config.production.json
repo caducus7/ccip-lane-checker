@@ -1,0 +1,8 @@
+{
+  "schedule": "0 0 */6 * * *",
+  "laneControllerAddress": "0x0000000000000000000000000000000000000001",
+  "chainSelectorName": "ethereum-testnet-sepolia",
+  "gasLimit": "500000",
+  "claimWindowSeconds": 604800,
+  "lookbackMaxRounds": 64
+}

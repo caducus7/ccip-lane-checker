@@ -15,8 +15,14 @@ import {
   createEvmClient,
   writeLaneController,
 } from "./evm-write";
+import {
+  buildRoundSchedulerResult,
+  computeNextRoundId,
+  toSelectorBigints,
+  type LanePath,
+} from "./logic";
 
-export type LanePath = string[];
+export type { LanePath };
 
 export type Config = {
   schedule: string;
@@ -25,9 +31,6 @@ export type Config = {
   gasLimit?: string;
   lanePaths: LanePath[];
 };
-
-const toSelectorBigints = (paths: LanePath[]): bigint[][] =>
-  paths.map((lane) => lane.map((selector) => BigInt(selector)));
 
 const onCronTrigger = (
   runtime: Runtime<Config>,
@@ -64,7 +67,7 @@ const onCronTrigger = (
   }) as bigint;
 
   // createRound does ++currentRoundId; read before write to avoid stale post-write view.
-  const roundId = previousRoundId + 1n;
+  const roundId = computeNextRoundId(previousRoundId);
 
   const createTx = writeLaneController(
     runtime,
@@ -84,17 +87,16 @@ const onCronTrigger = (
     [roundId],
   );
 
-  const result = {
-    action: "round-scheduled",
+  const result = buildRoundSchedulerResult({
     scheduledAt,
     createRoundTx: createTx,
     startRaceTx: startTx,
-    roundId: roundId.toString(),
+    roundId,
     laneCount: lanePaths.length,
-  };
+  });
 
-  runtime.log(`Round started: ${JSON.stringify(result)}`);
-  return JSON.stringify(result);
+  runtime.log(`Round started: ${result}`);
+  return result;
 };
 
 export const initWorkflow = (config: Config) => {

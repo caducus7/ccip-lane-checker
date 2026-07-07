@@ -29,6 +29,11 @@ import {
   createExecutorEvmClient,
   writeLaneExecutor,
 } from "./evm-write";
+import {
+  shouldCronSendInitial,
+  shouldProcessHopReceived,
+  shouldSendHop,
+} from "./logic";
 
 export type Config = {
   schedule: string;
@@ -150,10 +155,7 @@ const maybeSendNextHop = (
   initialOnly: boolean,
 ): string | null => {
   const lane = readLane(runtime, roundId, laneId);
-  if (lane.finished || lane.hopsCompleted >= lane.requiredHops) {
-    return null;
-  }
-  if (initialOnly && lane.hopsCompleted !== 0) {
+  if (!shouldSendHop(lane, initialOnly)) {
     return null;
   }
 
@@ -200,27 +202,27 @@ const onCronTrigger = (
 
   runtime.log(`hop-sender CRON fired at ${scheduledAt}`);
 
-  if (!runtime.config.isOriginChain) {
-    const skipped = { action: "cron-skipped", reason: "not-origin-chain" };
+  const roundId = readCurrentRoundId(runtime);
+  const state = readRoundState(runtime, roundId);
+  const gate = shouldCronSendInitial({
+    isOriginChain: runtime.config.isOriginChain ?? false,
+    roundId,
+    roundState: state,
+  });
+
+  if (!gate.proceed) {
+    const skipped =
+      gate.reason === "not-origin-chain"
+        ? { action: "cron-skipped", reason: gate.reason }
+        : {
+            action: "idle",
+            reason: gate.reason,
+            ...(roundId > 0n
+              ? { roundId: roundId.toString(), state }
+              : {}),
+          };
     runtime.log(JSON.stringify(skipped));
     return JSON.stringify(skipped);
-  }
-
-  const roundId = readCurrentRoundId(runtime);
-  if (roundId === 0n) {
-    const idle = { action: "idle", reason: "no-rounds" };
-    return JSON.stringify(idle);
-  }
-
-  const state = readRoundState(runtime, roundId);
-  if (state !== RoundState.Racing) {
-    const idle = {
-      action: "idle",
-      reason: "not-racing",
-      roundId: roundId.toString(),
-      state,
-    };
-    return JSON.stringify(idle);
   }
 
   const sends = processActiveLanes(runtime, roundId, true);
@@ -254,7 +256,7 @@ const onHopReceived = (runtime: Runtime<Config>, log: EVMLog): string => {
   const { roundId, laneId } = decoded.args;
 
   const state = readRoundState(runtime, roundId);
-  if (state !== RoundState.Racing && state !== RoundState.Finished) {
+  if (!shouldProcessHopReceived(state)) {
     const skipped = {
       event: "HopReceived",
       action: "skipped",

@@ -14,5 +14,5 @@
       "@chainlink/cre-sdk": ["./node_modules/@chainlink/cre-sdk"]
     }
   },
-  "include": ["main.ts", "lane-controller-abi.ts", "evm-write.ts"]
+  "include": ["main.ts", "logic.ts", "lane-controller-abi.ts", "evm-write.ts"]
 }

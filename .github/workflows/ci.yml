@@ -69,6 +69,7 @@ jobs:
           - hop-sender
           - hop-monitor
           - settlement
+          - sweep-unclaimed
           - lane-benchmark
     steps:
       - name: Checkout
@@ -86,3 +87,32 @@ jobs:
       - name: Typecheck
         run: bun run typecheck
         working-directory: cre/lane-checker-cre/${{ matrix.workflow }}
+
+      - name: Unit tests
+        run: |
+          if [ -f main.test.ts ]; then bun test; else echo "No main.test.ts — skipping"; fi
+        working-directory: cre/lane-checker-cre/${{ matrix.workflow }}
+
+  cre-validate:
+    name: CRE dry-run validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Build contracts
+        run: forge build
+        working-directory: contracts
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.2.21"
+
+      - name: CRE ABI sync, typecheck, and unit tests
+        run: ./scripts/cre-simulate-check.sh
