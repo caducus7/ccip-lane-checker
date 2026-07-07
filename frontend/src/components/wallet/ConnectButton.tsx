@@ -1,9 +1,16 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { useAccount, useConnect, useDisconnect, useSwitchChain } from "wagmi";
 import { SUPPORTED_CHAINS } from "@/lib/chains";
 
+const connectButtonClass =
+  "px-5 py-2.5 font-mono text-xs uppercase tracking-[0.2em] bg-neon-cyan text-asphalt font-bold hover:shadow-[0_0_20px_rgba(0,245,212,0.4)] transition-shadow disabled:opacity-50";
+
 export function ConnectButton() {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
   const { address, isConnected, chain } = useAccount();
   const { connect, connectors, isPending } = useConnect();
   const { disconnect } = useDisconnect();
@@ -11,6 +18,14 @@ export function ConnectButton() {
 
   const isSupported =
     chain && SUPPORTED_CHAINS.some((c) => c.id === chain.id);
+
+  if (!mounted) {
+    return (
+      <button type="button" disabled className={connectButtonClass}>
+        Connect Wallet
+      </button>
+    );
+  }
 
   if (isConnected && address) {
     return (
@@ -45,7 +60,7 @@ export function ConnectButton() {
       type="button"
       disabled={!injected || isPending}
       onClick={() => injected && connect({ connector: injected })}
-      className="px-5 py-2.5 font-mono text-xs uppercase tracking-[0.2em] bg-neon-cyan text-asphalt font-bold hover:shadow-[0_0_20px_rgba(0,245,212,0.4)] transition-shadow disabled:opacity-50"
+      className={connectButtonClass}
     >
       {isPending ? "Connecting…" : "Connect Wallet"}
     </button>

@@ -10,6 +10,7 @@ import {
 } from "@/lib/lane-data";
 import { ccipExplorerHome } from "@/lib/ccip";
 import { snapshotToLaneBenchmarks } from "@/lib/snapshot-to-lanes";
+import { formatUtcDateTime } from "@/lib/format-date";
 
 type DataSource = "loading" | "cache" | "static";
 
@@ -89,7 +90,7 @@ export function LaneBenchmarkDashboard() {
 
 function formatTimestamp(iso: string): string {
   try {
-    return new Date(iso).toLocaleString();
+    return formatUtcDateTime(iso);
   } catch {
     return iso;
   }

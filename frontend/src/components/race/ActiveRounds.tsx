@@ -9,6 +9,7 @@ import {
   useTotalPrizePool,
 } from "@/hooks/useLaneController";
 import { useDeploymentStatus } from "@/hooks/useDeploymentStatus";
+import { formatUtcTime } from "@/lib/format-date";
 import { MOCK_ACTIVE_ROUNDS } from "@/lib/lane-data";
 import {
   DeploymentBanner,
@@ -118,7 +119,7 @@ function RoundCard({
       </div>
       {round.bettingEndsAt && round.status === "betting" && (
         <p className="mt-3 font-mono text-[10px] text-neon-amber/80">
-          Betting closes {new Date(round.bettingEndsAt).toLocaleTimeString()}
+          Betting closes {formatUtcTime(round.bettingEndsAt)} UTC
         </p>
       )}
     </Link>

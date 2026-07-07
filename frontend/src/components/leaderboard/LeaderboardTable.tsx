@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { MOCK_LEADERBOARD } from "@/lib/lane-data";
 import { useDeploymentStatus } from "@/hooks/useDeploymentStatus";
+import { formatUtcDate } from "@/lib/format-date";
 import { DeploymentBanner } from "@/components/ui/EmptyState";
 
 export function LeaderboardTable() {
@@ -90,7 +91,7 @@ function LeaderboardGrid({
                 {entry.hops}
               </td>
               <td className="px-3 sm:px-4 py-3 text-right font-mono text-[10px] text-white/40 hidden md:table-cell">
-                {new Date(entry.timestamp).toLocaleDateString()}
+                {formatUtcDate(entry.timestamp)}
               </td>
             </tr>
           ))}

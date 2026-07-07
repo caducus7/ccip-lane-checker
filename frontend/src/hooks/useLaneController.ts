@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   useAccount,
   useReadContract,
@@ -114,19 +114,26 @@ export function useLaneControllerActions() {
   const [lastCompletedAction, setLastCompletedAction] =
     useState<LaneControllerAction>(null);
 
-  const { writeContract, data: hash, isPending, error, reset } =
-    useWriteContract();
+  const {
+    writeContract,
+    data: hash,
+    isPending,
+    error,
+    reset: resetWrite,
+  } = useWriteContract();
+
+  const resetWriteRef = useRef(resetWrite);
+  resetWriteRef.current = resetWrite;
 
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({
     hash,
   });
 
   useEffect(() => {
-    if (isSuccess && pendingAction) {
-      setLastCompletedAction(pendingAction);
-      refetchAllowance();
-      setPendingAction(null);
-    }
+    if (!isSuccess || !pendingAction) return;
+    setLastCompletedAction(pendingAction);
+    void refetchAllowance();
+    setPendingAction(null);
   }, [isSuccess, pendingAction, refetchAllowance]);
 
   const needsApproval = (amount: string): boolean => {
@@ -184,11 +191,11 @@ export function useLaneControllerActions() {
     });
   };
 
-  const clearActionState = () => {
-    reset();
+  const clearActionState = useCallback(() => {
+    resetWriteRef.current();
     setPendingAction(null);
     setLastCompletedAction(null);
-  };
+  }, []);
 
   return {
     approveBettingToken,
