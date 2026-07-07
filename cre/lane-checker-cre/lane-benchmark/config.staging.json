@@ -2,17 +2,39 @@
   "schedule": "0 */5 * * * *",
   "ccipApiBaseUrl": "https://api.ccip.chain.link/v2",
   "cacheKey": "lane-benchmark-cache",
+  "frontendCacheUrl": "http://localhost:3000/api/lanes",
+  "frontendCacheAuthToken": "",
   "authorizedKeys": [],
   "lanes": [
     {
-      "label": "sepolia-to-arbitrum-sepolia",
+      "label": "ethereum-sepolia-to-arbitrum-sepolia",
       "sourceChainSelector": "16015286601757825753",
       "destChainSelector": "3478487238524512106"
     },
     {
-      "label": "sepolia-to-base-sepolia",
+      "label": "ethereum-sepolia-to-base-sepolia",
       "sourceChainSelector": "16015286601757825753",
       "destChainSelector": "10344971235874465080"
+    },
+    {
+      "label": "arbitrum-sepolia-to-ethereum-sepolia",
+      "sourceChainSelector": "3478487238524512106",
+      "destChainSelector": "16015286601757825753"
+    },
+    {
+      "label": "arbitrum-sepolia-to-base-sepolia",
+      "sourceChainSelector": "3478487238524512106",
+      "destChainSelector": "10344971235874465080"
+    },
+    {
+      "label": "base-sepolia-to-ethereum-sepolia",
+      "sourceChainSelector": "10344971235874465080",
+      "destChainSelector": "16015286601757825753"
+    },
+    {
+      "label": "base-sepolia-to-arbitrum-sepolia",
+      "sourceChainSelector": "10344971235874465080",
+      "destChainSelector": "3478487238524512106"
     }
   ]
 }

@@ -89,7 +89,7 @@ curl -X POST http://localhost:8080/trigger \
 
 ### lane-benchmark → frontend off-chain cache (staging)
 
-The `lane-benchmark` workflow writes a `BenchmarkSnapshot` JSON blob after each CRON or HTTP run. In staging, POST that snapshot to the Next.js cache API so `/lanes` can serve live CCIP latency instead of static mock data.
+The `lane-benchmark` workflow writes a `BenchmarkSnapshot` JSON blob after each CRON or HTTP run and **POSTs it to `frontendCacheUrl`** from `config.staging.json` (default `http://localhost:3000/api/lanes`). Optional `frontendCacheAuthToken` is sent as `Authorization: Bearer …` when set.
 
 **Frontend API** (`frontend/src/app/api/lanes/route.ts`):
 
@@ -121,8 +121,10 @@ The `lane-benchmark` workflow writes a `BenchmarkSnapshot` JSON blob after each 
 **Local dev flow**
 
 1. Start the frontend: `cd frontend && npm run dev` (default `http://localhost:3000`).
-2. Simulate `lane-benchmark` (CRON or HTTP trigger above) and capture the JSON log output.
-3. POST the snapshot to the cache:
+2. Simulate `lane-benchmark` (CRON or HTTP trigger above). The workflow POSTs the snapshot to `frontendCacheUrl` automatically.
+3. Open `/lanes` — the dashboard fetches `GET /api/lanes` and maps `totalMs` into p50/p95 display rows; if the cache is empty it falls back to `LANE_BENCHMARKS` in `frontend/src/lib/lane-data.ts`.
+
+Manual POST (optional, e.g. without CRE):
 
 ```bash
 curl -X POST http://localhost:3000/api/lanes \
@@ -130,7 +132,7 @@ curl -X POST http://localhost:3000/api/lanes \
   -d @snapshot.json
 ```
 
-With auth enabled (`LANE_BENCHMARK_AUTH_TOKEN` in `.env`):
+With auth enabled (`LANE_BENCHMARK_AUTH_TOKEN` in frontend `.env` and `frontendCacheAuthToken` in CRE config):
 
 ```bash
 curl -X POST http://localhost:3000/api/lanes \
@@ -138,8 +140,6 @@ curl -X POST http://localhost:3000/api/lanes \
   -H "Authorization: Bearer $LANE_BENCHMARK_AUTH_TOKEN" \
   -d @snapshot.json
 ```
-
-4. Open `/lanes` — the dashboard fetches `GET /api/lanes` and maps `totalMs` into p50/p95 display rows; if the cache is empty it falls back to `LANE_BENCHMARKS` in `frontend/src/lib/lane-data.ts`.
 
 **Storage:** in-memory singleton plus optional file persistence at `frontend/.cache/lane-benchmark.json` (survives dev server restarts when writable).
 
@@ -204,7 +204,83 @@ Update `config.staging.json` addresses before broadcasting.
 
 ## Configuration
 
-Replace placeholder `laneControllerAddress` (`0x00…01`) in each workflow's `config.staging.json` after testnet deployment.
+Each workflow ships a pre-filled `config.staging.json` with placeholder contract addresses (`0x0000000000000000000000000000000000000001`) and chain metadata aligned to [`contracts/deployments/testnet.json`](../contracts/deployments/testnet.json). JSON cannot hold comments — field meanings and post-deploy steps are documented below.
+
+### Staging config fill guide
+
+**After `DeployAll.s.sol` on each chain**, copy deployed addresses from `testnet.json` → `contracts.*` into the workflow configs below. Until then, placeholders are valid for `cre workflow simulate` (read-only / dry-run).
+
+| `testnet.json` chain key | CRE `chainSelectorName` | CCIP selector |
+|--------------------------|-------------------------|---------------|
+| `ethereum-sepolia` | `ethereum-testnet-sepolia` | `16015286601757825753` |
+| `arbitrum-sepolia` | `ethereum-testnet-sepolia-arbitrum-1` | `3478487238524512106` |
+| `base-sepolia` | `ethereum-testnet-sepolia-base-1` | `10344971235874465080` |
+
+#### `round-scheduler` (`cre/lane-checker-cre/round-scheduler/config.staging.json`)
+
+| Field | Staging value | Fill post-deploy |
+|-------|---------------|------------------|
+| `laneControllerAddress` | `0x00…01` | `testnet.json` → `chains.ethereum-sepolia.contracts.LaneController` |
+| `chainSelectorName` | `ethereum-testnet-sepolia` | Fixed (controller home chain) |
+| `lanePaths` | CCIP selectors for 3-chain race paths | Usually unchanged; matches deployed lane topology |
+| `schedule`, `gasLimit` | CRON + gas | Tune for staging load |
+
+#### `hop-sender` (`cre/lane-checker-cre/hop-sender/config.staging.json`)
+
+Deploy **one workflow instance per chain** (separate CRE deployment). Staging file targets the **origin** (Ethereum Sepolia).
+
+| Field | Staging value | Fill post-deploy |
+|-------|---------------|------------------|
+| `laneControllerAddress` | `0x00…01` | Sepolia `LaneController` |
+| `laneExecutorAddress` | `0x00…01` | **This chain's** `LaneExecutor` |
+| `controllerChainSelectorName` | `ethereum-testnet-sepolia` | Fixed for Sepolia-origin instance |
+| `executorChainSelectorName` | `ethereum-testnet-sepolia` | CRE name for the chain this instance runs on |
+| `isOriginChain` | `true` on Sepolia; `false` on Arbitrum/Base | CRON sends initial hops only on origin |
+| `laneCount` | `2` | Match `round-scheduler` `lanePaths.length` |
+
+For Arbitrum Sepolia / Base Sepolia instances: set `executorChainSelectorName` to the matching CRE name, `isOriginChain` to `false`, and `laneExecutorAddress` to that chain's deployed executor.
+
+#### `hop-monitor` (`cre/lane-checker-cre/hop-monitor/config.staging.json`)
+
+| Field | Staging value | Fill post-deploy |
+|-------|---------------|------------------|
+| `laneControllerAddress` | `0x00…01` | Sepolia `LaneController` (canonical event source) |
+| `controllerChainSelectorName` | `ethereum-testnet-sepolia` | Fixed |
+| `chains[]` | All three testnet CRE chain names | One log trigger pair (`HopCompleted`, `LaneFinished`) per entry |
+| `gasLimit` | `500000` | Tune if needed |
+
+#### `settlement` (`cre/lane-checker-cre/settlement/config.staging.json`)
+
+| Field | Staging value | Fill post-deploy |
+|-------|---------------|------------------|
+| `laneControllerAddress` | `0x00…01` | Sepolia `LaneController` |
+| `chainSelectorName` | `ethereum-testnet-sepolia` | Fixed (`WinnerDeclared` on controller chain) |
+| `gasLimit` | `800000` | Tune if `distributePrizes` needs more gas |
+
+#### `sweep-unclaimed` (`cre/lane-checker-cre/sweep-unclaimed/config.staging.json`)
+
+| Field | Staging value | Fill post-deploy |
+|-------|---------------|------------------|
+| `laneControllerAddress` | `0x00…01` | Sepolia `LaneController` |
+| `chainSelectorName` | `ethereum-testnet-sepolia` | Fixed |
+| `claimWindowSeconds` | `86400` (1 day staging) | Match on-chain claim window |
+| `lookbackMaxRounds` | `32` | Max rounds scanned per CRON tick |
+| `schedule` | `0 0 */6 * * *` | Tune sweep frequency |
+
+#### `lane-benchmark` (`cre/lane-checker-cre/lane-benchmark/config.staging.json`)
+
+No on-chain addresses. Lanes use selectors from `testnet.json`; labels use chain keys (`ethereum-sepolia-to-arbitrum-sepolia`, etc.).
+
+| Field | Staging value | Fill post-deploy |
+|-------|---------------|------------------|
+| `ccipApiBaseUrl` | `https://api.ccip.chain.link/v2` | Production URL if API host changes |
+| `lanes[]` | All 6 directed testnet pairs | Add/remove pairs as CCIP lanes go live |
+| `frontendCacheUrl` | `http://localhost:3000/api/lanes` | Staging/prod frontend `POST /api/lanes` URL |
+| `frontendCacheAuthToken` | `""` (empty) | Set to match frontend `LANE_BENCHMARK_AUTH_TOKEN`; sent as `Authorization: Bearer …` |
+| `authorizedKeys` | `[]` | HTTP trigger signing keys for manual refresh |
+| `cacheKey` | `lane-benchmark-cache` | Must match frontend cache key expectations |
+
+The workflow **automatically POSTs** each `BenchmarkSnapshot` to `frontendCacheUrl` after CRON and HTTP runs. POST failures are logged but do not fail the workflow (local dev can run without the Next.js server).
 
 CCIP chain selectors (testnet lanes in configs):
 
@@ -212,7 +288,7 @@ CCIP chain selectors (testnet lanes in configs):
 |---------|---------------|
 | Ethereum Sepolia | `16015286601757825753` |
 | Arbitrum Sepolia | `3478487238524512106` |
-| Base Sepolia | `10344971235874465078` |
+| Base Sepolia | `10344971235874465080` |
 
 ## Contract alignment
 

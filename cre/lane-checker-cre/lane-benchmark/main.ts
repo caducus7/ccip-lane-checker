@@ -7,6 +7,7 @@ import {
   type HTTPSendRequester,
   type Runtime,
   ConsensusAggregationByFields,
+  identical,
   median,
   ok,
   json,
@@ -25,6 +26,10 @@ export type Config = {
   cacheKey: string;
   authorizedKeys: Array<{ publicKey?: string }>;
   lanes: LaneRoute[];
+  /** POST target for frontend BenchmarkSnapshot cache (optional). */
+  frontendCacheUrl?: string;
+  /** Bearer token for POST when frontend sets LANE_BENCHMARK_AUTH_TOKEN. */
+  frontendCacheAuthToken?: string;
 };
 
 const laneLatencySchema = z.object({
@@ -58,7 +63,7 @@ type LaneBenchmarkEntry = {
   error?: string;
 };
 
-type BenchmarkSnapshot = {
+export type BenchmarkSnapshot = {
   cacheKey: string;
   fetchedAt: string;
   lanes: LaneBenchmarkEntry[];
@@ -67,6 +72,12 @@ type BenchmarkSnapshot = {
 const latencyAggregation = ConsensusAggregationByFields<LaneLatencyResponse>({
   totalMs: () => median(),
 });
+
+const cachePostAggregation = ConsensusAggregationByFields<{ statusCode: number }>(
+  {
+    statusCode: () => identical(),
+  },
+);
 
 const fetchLaneLatencyUrl = (
   sendRequester: HTTPSendRequester,
@@ -79,6 +90,37 @@ const fetchLaneLatencyUrl = (
   }
 
   return laneLatencySchema.parse(json(response));
+};
+
+const postSnapshotToCache = (
+  sendRequester: HTTPSendRequester,
+  url: string,
+  authToken: string | undefined,
+  snapshot: BenchmarkSnapshot,
+): { statusCode: number } => {
+  const headers: Record<string, string> = {
+    "Content-Type": "application/json",
+  };
+  const token = authToken?.trim();
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  const response = sendRequester
+    .sendRequest({
+      url,
+      method: "POST",
+      headers,
+      body: JSON.stringify(snapshot),
+      cacheSettings: { store: false },
+    })
+    .result();
+
+  if (!ok(response)) {
+    throw new Error(`Frontend cache POST ${response.statusCode} for ${url}`);
+  }
+
+  return { statusCode: response.statusCode };
 };
 
 const buildLatencyUrl = (
@@ -140,6 +182,39 @@ const collectBenchmarks = (runtime: Runtime<Config>): BenchmarkSnapshot => {
   };
 };
 
+const pushSnapshotToFrontendCache = (
+  runtime: Runtime<Config>,
+  snapshot: BenchmarkSnapshot,
+): void => {
+  const url = runtime.config.frontendCacheUrl?.trim();
+  if (!url) {
+    return;
+  }
+
+  const httpClient = new cre.capabilities.HTTPClient();
+
+  try {
+    const result = httpClient
+      .sendRequest(
+        runtime,
+        postSnapshotToCache,
+        cachePostAggregation,
+      )(
+        url,
+        runtime.config.frontendCacheAuthToken,
+        snapshot,
+      )
+      .result();
+
+    runtime.log(
+      `frontend cache POST ${url} -> ${result.statusCode} (${snapshot.lanes.length} lanes)`,
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    runtime.log(`frontend cache POST failed (${url}): ${message}`);
+  }
+};
+
 const onCronTrigger = (
   runtime: Runtime<Config>,
   payload: CronPayload,
@@ -150,6 +225,7 @@ const onCronTrigger = (
   runtime.log(`lane-benchmark cron at ${scheduledAt}`);
 
   const snapshot = collectBenchmarks(runtime);
+  pushSnapshotToFrontendCache(runtime, snapshot);
   const output = JSON.stringify(snapshot);
   runtime.log(`benchmark cache[${runtime.config.cacheKey}]: ${output}`);
   return output;
@@ -163,6 +239,7 @@ const onHttpTrigger = (
   runtime.log(`lane-benchmark HTTP refresh: ${bodyText}`);
 
   const snapshot = collectBenchmarks(runtime);
+  pushSnapshotToFrontendCache(runtime, snapshot);
   const output = JSON.stringify({
     ...snapshot,
     trigger: "http",
