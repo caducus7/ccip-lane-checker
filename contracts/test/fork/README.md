@@ -22,9 +22,10 @@ or secrets are needed in CI.
 Set the RPC URLs (these also feed `[rpc_endpoints]` in `foundry.toml`):
 
 ```bash
-export SEPOLIA_RPC="https://ethereum-sepolia-rpc.publicnode.com"       # or Alchemy/Infura
-export ARBITRUM_SEPOLIA_RPC="https://sepolia-rollup.arbitrum.io/rpc"
-export BASE_SEPOLIA_RPC="https://sepolia.base.org"
+# Canonical public RPCs (PublicNode; no API key required)
+export SEPOLIA_RPC="https://ethereum-sepolia-rpc.publicnode.com"
+export ARBITRUM_SEPOLIA_RPC="https://arbitrum-sepolia-rpc.publicnode.com"
+export BASE_SEPOLIA_RPC="https://base-sepolia-rpc.publicnode.com"
 
 forge test --match-path "test/fork/*"
 ```

@@ -13,6 +13,11 @@ remappings = [
     "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
 ]
 
+# Fork tests: set env vars to canonical public RPCs (see test/fork/README.md):
+#   SEPOLIA_RPC=https://ethereum-sepolia-rpc.publicnode.com
+#   ARBITRUM_SEPOLIA_RPC=https://arbitrum-sepolia-rpc.publicnode.com
+#   BASE_SEPOLIA_RPC=https://base-sepolia-rpc.publicnode.com
+
 [rpc_endpoints]
 sepolia = "${SEPOLIA_RPC}"
 arbitrum_sepolia = "${ARBITRUM_SEPOLIA_RPC}"

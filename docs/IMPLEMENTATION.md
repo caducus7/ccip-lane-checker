@@ -87,6 +87,10 @@ Start-to-finished-product plan. Each step is independently shippable.
 - [x] Trigger: CRON initial hops + `HopReceived` continuation
 - [x] Action: `LaneExecutor.sendHop` per race leg
 
+### Workflow F: `sweep-unclaimed` (CRON)
+- [x] Trigger: every 6 h (staging) / daily (production config)
+- [x] Action: `sweepUnclaimed(roundId)` for settled rounds past `claimWindowSeconds`
+
 **Setup:**
 ```bash
 cd cre/lane-checker-cre
@@ -142,8 +146,10 @@ cre workflow simulate round-scheduler --target staging-settings
 - [x] Wallet connect (Sepolia + Arbitrum Sepolia + Base Sepolia)
 - [ ] Live hop progress via CCIP message status polling (needs testnet deploy)
 - [x] Animated lane race visualization
-- [x] Bet placement + prize pool display
-- [ ] CCIP Explorer deep links per message (needs live message IDs)
+- [x] Bet placement + prize pool display + `claimPrize` flow
+- [x] Tx feedback (pending / success / error) + LINK `approve` UX on solo + parimutuel
+- [x] CCIP Explorer deep links (`buildCcipExplorerMessageUrl` in `HopProgress`)
+- [x] `/lanes` dashboard reads `GET /api/lanes` with static fallback
 
 **Exit criteria:** Full solo + parimutuel playable from browser on testnet. **Blocked on Step 4.**
 
@@ -154,11 +160,12 @@ cre workflow simulate round-scheduler --target staging-settings
 **Goal:** Real CCIP lane performance data, not just game latency.
 
 1. [x] CRE `lane-benchmark` workflow polls CCIP API `lane-latency` per route
-2. [ ] Store rolling p50/p95 latency per lane in on-chain `LaneRegistry` or off-chain cache
-3. [x] Frontend `/lanes` page scaffold (heatmap placeholder)
+2. [x] Off-chain cache via `POST /api/lanes` (in-memory + `frontend/.cache/lane-benchmark.json`)
+3. [x] Frontend `/lanes` dashboard (cache → static `LANE_BENCHMARKS` fallback)
 4. [ ] Use benchmark data to weight lane difficulty in race scoring (optional handicap)
+5. [ ] On-chain `LaneRegistry` (deferred — off-chain cache sufficient for demo)
 
-**Exit criteria:** Dashboard shows live CCIP lane metrics alongside game results. **Partial.**
+**Exit criteria:** Dashboard shows live CCIP lane metrics alongside game results. **Met for staging** (CRE POST → cache → UI).
 
 ---
 
@@ -166,11 +173,11 @@ cre workflow simulate round-scheduler --target staging-settings
 
 1. [ ] Security review (`solidity-auditor` skill on full `contracts/src`)
 2. [x] Access control audit on CRE write paths (`CreReportAuth` selector allowlist; `creForwarder` gating)
-3. [ ] Gas optimization pass
-4. [ ] Rate limiting on round creation
+3. [x] Gas optimization pass (`Round` slot packing; `uint48` rate-limit fields; inline `requiredHops`; flat `sendHop` gas via external hop sends)
+4. [x] Rate limiting on round creation (`roundCooldown`, default 60 s; owner-tunable; applies to CRE `onReport` too)
 5. [x] Emergency pause on `LaneController` (`LaneControllerPausable`)
-6. [x] Comprehensive integration test suite (Chainlink Local multi-fork)
-7. [ ] CI: `forge test` + `cre workflow simulate` on PR
+6. [x] Comprehensive integration test suite (Chainlink Local multi-fork + `FullSmoke.t.sol` solo/parimutuel lifecycles)
+7. [x] CI: `forge test` + CRE typecheck/unit tests + `cre-validate` (`scripts/cre-simulate-check.sh` ABI sync on PR)
 
 ---
 
