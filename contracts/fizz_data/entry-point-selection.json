@@ -1,0 +1,43 @@
+[
+  {
+    "name": "LaneController",
+    "sourcePath": "src/core/LaneController.sol",
+    "functions": [
+      { "name": "buyLaneTokens", "tier": "primary" },
+      { "name": "claimPrize", "tier": "primary" },
+      { "name": "createRound", "tier": "primary" },
+      { "name": "distributePrizes", "tier": "primary" },
+      { "name": "recordHop", "tier": "primary" },
+      { "name": "startRace", "tier": "primary" },
+      { "name": "sweepUnclaimed", "tier": "primary" },
+      { "name": "pause", "tier": "secondary" },
+      { "name": "unpause", "tier": "secondary" },
+      { "name": "setClaimWindow", "tier": "secondary" },
+      { "name": "setRunnerUpSettlementTimeout", "tier": "secondary" },
+      { "name": "setHopRecorder", "tier": "secondary" },
+      { "name": "setRoundCooldown", "tier": "secondary" }
+    ]
+  },
+  {
+    "name": "LaneExecutor",
+    "sourcePath": "src/core/LaneExecutor.sol",
+    "functions": [
+      { "name": "sendHop", "tier": "primary" },
+      { "name": "pause", "tier": "secondary" },
+      { "name": "unpause", "tier": "secondary" },
+      { "name": "setHopSender", "tier": "secondary" },
+      { "name": "setRemoteExecutor", "tier": "secondary" }
+    ]
+  },
+  {
+    "name": "LaneToken",
+    "sourcePath": "src/core/LaneToken.sol",
+    "functions": [
+      { "name": "deposit", "tier": "primary" },
+      { "name": "withdraw", "tier": "primary" },
+      { "name": "startGame", "tier": "primary" },
+      { "name": "abandonGame", "tier": "primary" },
+      { "name": "setRemoteLaneToken", "tier": "secondary" }
+    ]
+  }
+]

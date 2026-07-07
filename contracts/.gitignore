@@ -18,3 +18,10 @@ docs/
 .env
 .env.*
 !.env.example
+
+# Fuzz campaign artifacts (harness + metadata are committed)
+fizz_data/corpus_medusa/
+fizz_data/crytic-export/
+fizz_data/logs_medusa/
+fizz_data/slither_results.json
+.audit-*/

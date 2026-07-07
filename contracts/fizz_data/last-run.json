@@ -1,0 +1,779 @@
+{
+  "version": 1,
+  "createdAt": "2026-07-07T17:56:10.214Z",
+  "projectRoot": ".",
+  "suiteDir": "test/fizz",
+  "metaDir": "fizz_data",
+  "contracts": [
+    {
+      "name": "LaneController",
+      "sourcePath": "src/core/LaneController.sol",
+      "sourceHash": "sha256:3c2ca731001dafe11d7d9f85d77d1b56a5bf121c8180c5941f033619d337e4c5",
+      "constructor": {
+        "inputs": [
+          {
+            "name": "initialOwner",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "_bettingToken",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "_platformTreasury",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "_gasReserve",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "_creForwarder",
+            "type": "address",
+            "internalType": "address"
+          }
+        ],
+        "stateMutability": "nonpayable"
+      },
+      "functions": [
+        {
+          "name": "buyLaneTokens",
+          "inputs": [
+            {
+              "name": "roundId",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "laneId",
+              "type": "uint8",
+              "internalType": "uint8"
+            },
+            {
+              "name": "amount",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ],
+          "stateMutability": "nonpayable",
+          "tier": "primary",
+          "signature": "buyLaneTokens(uint256,uint8,uint256)"
+        },
+        {
+          "name": "claimPrize",
+          "inputs": [
+            {
+              "name": "roundId",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ],
+          "stateMutability": "nonpayable",
+          "tier": "primary",
+          "signature": "claimPrize(uint256)"
+        },
+        {
+          "name": "createRound",
+          "inputs": [
+            {
+              "name": "lanePaths",
+              "type": "array",
+              "internalType": "uint64[][]"
+            }
+          ],
+          "stateMutability": "nonpayable",
+          "tier": "primary",
+          "signature": "createRound(uint64[][])"
+        },
+        {
+          "name": "declareWinner",
+          "inputs": [
+            {
+              "name": "roundId",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "laneId",
+              "type": "uint8",
+              "internalType": "uint8"
+            }
+          ],
+          "stateMutability": "nonpayable",
+          "tier": "primary",
+          "signature": "declareWinner(uint256,uint8)"
+        },
+        {
+          "name": "distributePrizes",
+          "inputs": [
+            {
+              "name": "roundId",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ],
+          "stateMutability": "nonpayable",
+          "tier": "primary",
+          "signature": "distributePrizes(uint256)"
+        },
+        {
+          "name": "onReport",
+          "inputs": [
+            {
+              "name": "",
+              "type": "bytes",
+              "internalType": "bytes"
+            },
+            {
+              "name": "report",
+              "type": "bytes",
+              "internalType": "bytes"
+            }
+          ],
+          "stateMutability": "nonpayable",
+          "tier": "primary",
+          "signature": "onReport(bytes,bytes)"
+        },
+        {
+          "name": "pause",
+          "inputs": [],
+          "stateMutability": "nonpayable",
+          "tier": "secondary",
+          "signature": "pause()"
+        },
+        {
+          "name": "recordHop",
+          "inputs": [
+            {
+              "name": "roundId",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "laneId",
+              "type": "uint8",
+              "internalType": "uint8"
+            },
+            {
+              "name": "chainSelector",
+              "type": "uint64",
+              "internalType": "uint64"
+            },
+            {
+              "name": "sendTime",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ],
+          "stateMutability": "nonpayable",
+          "tier": "primary",
+          "signature": "recordHop(uint256,uint8,uint64,uint256)"
+        },
+        {
+          "name": "renounceOwnership",
+          "inputs": [],
+          "stateMutability": "nonpayable",
+          "tier": "primary",
+          "signature": "renounceOwnership()"
+        },
+        {
+          "name": "setClaimWindow",
+          "inputs": [
+            {
+              "name": "window",
+              "type": "uint48",
+              "internalType": "uint48"
+            }
+          ],
+          "stateMutability": "nonpayable",
+          "tier": "primary",
+          "signature": "setClaimWindow(uint48)"
+        },
+        {
+          "name": "setCreForwarder",
+          "inputs": [
+            {
+              "name": "forwarder",
+              "type": "address",
+              "internalType": "address"
+            }
+          ],
+          "stateMutability": "nonpayable",
+          "tier": "primary",
+          "signature": "setCreForwarder(address)"
+        },
+        {
+          "name": "setHopRecorder",
+          "inputs": [
+            {
+              "name": "recorder",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "allowed",
+              "type": "bool",
+              "internalType": "bool"
+            }
+          ],
+          "stateMutability": "nonpayable",
+          "tier": "primary",
+          "signature": "setHopRecorder(address,bool)"
+        },
+        {
+          "name": "setRoundCooldown",
+          "inputs": [
+            {
+              "name": "cooldown",
+              "type": "uint48",
+              "internalType": "uint48"
+            }
+          ],
+          "stateMutability": "nonpayable",
+          "tier": "primary",
+          "signature": "setRoundCooldown(uint48)"
+        },
+        {
+          "name": "setRunnerUpSettlementTimeout",
+          "inputs": [
+            {
+              "name": "timeout",
+              "type": "uint48",
+              "internalType": "uint48"
+            }
+          ],
+          "stateMutability": "nonpayable",
+          "tier": "primary",
+          "signature": "setRunnerUpSettlementTimeout(uint48)"
+        },
+        {
+          "name": "startRace",
+          "inputs": [
+            {
+              "name": "roundId",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ],
+          "stateMutability": "nonpayable",
+          "tier": "primary",
+          "signature": "startRace(uint256)"
+        },
+        {
+          "name": "sweepUnclaimed",
+          "inputs": [
+            {
+              "name": "roundId",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ],
+          "stateMutability": "nonpayable",
+          "tier": "primary",
+          "signature": "sweepUnclaimed(uint256)"
+        },
+        {
+          "name": "transferOwnership",
+          "inputs": [
+            {
+              "name": "newOwner",
+              "type": "address",
+              "internalType": "address"
+            }
+          ],
+          "stateMutability": "nonpayable",
+          "tier": "primary",
+          "signature": "transferOwnership(address)"
+        },
+        {
+          "name": "unpause",
+          "inputs": [],
+          "stateMutability": "nonpayable",
+          "tier": "secondary",
+          "signature": "unpause()"
+        }
+      ]
+    },
+    {
+      "name": "LaneExecutor",
+      "sourcePath": "src/core/LaneExecutor.sol",
+      "sourceHash": "sha256:f345fb14ebe5c8f435a7951d6a4b13e61a5740fe7d38b2198e03be69beed699c",
+      "constructor": {
+        "inputs": [
+          {
+            "name": "router",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "initialOwner",
+            "type": "address",
+            "internalType": "address"
+          }
+        ],
+        "stateMutability": "nonpayable"
+      },
+      "functions": [
+        {
+          "name": "ccipReceive",
+          "inputs": [
+            {
+              "name": "message",
+              "type": "tuple",
+              "internalType": "Client.Any2EVMMessage"
+            }
+          ],
+          "stateMutability": "nonpayable",
+          "tier": "primary",
+          "signature": "ccipReceive(Client.Any2EVMMessage)"
+        },
+        {
+          "name": "onReport",
+          "inputs": [
+            {
+              "name": "",
+              "type": "bytes",
+              "internalType": "bytes"
+            },
+            {
+              "name": "report",
+              "type": "bytes",
+              "internalType": "bytes"
+            }
+          ],
+          "stateMutability": "nonpayable",
+          "tier": "primary",
+          "signature": "onReport(bytes,bytes)"
+        },
+        {
+          "name": "pause",
+          "inputs": [],
+          "stateMutability": "nonpayable",
+          "tier": "secondary",
+          "signature": "pause()"
+        },
+        {
+          "name": "renounceOwnership",
+          "inputs": [],
+          "stateMutability": "nonpayable",
+          "tier": "primary",
+          "signature": "renounceOwnership()"
+        },
+        {
+          "name": "sendHop",
+          "inputs": [
+            {
+              "name": "roundId",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "laneId",
+              "type": "uint8",
+              "internalType": "uint8"
+            },
+            {
+              "name": "destChainSelector",
+              "type": "uint64",
+              "internalType": "uint64"
+            }
+          ],
+          "stateMutability": "nonpayable",
+          "tier": "primary",
+          "signature": "sendHop(uint256,uint8,uint64)"
+        },
+        {
+          "name": "setCreForwarder",
+          "inputs": [
+            {
+              "name": "forwarder",
+              "type": "address",
+              "internalType": "address"
+            }
+          ],
+          "stateMutability": "nonpayable",
+          "tier": "primary",
+          "signature": "setCreForwarder(address)"
+        },
+        {
+          "name": "setHomeConfig",
+          "inputs": [
+            {
+              "name": "_localChainSelector",
+              "type": "uint64",
+              "internalType": "uint64"
+            },
+            {
+              "name": "_homeChainSelector",
+              "type": "uint64",
+              "internalType": "uint64"
+            },
+            {
+              "name": "_canonicalController",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "_homeExecutor",
+              "type": "address",
+              "internalType": "address"
+            }
+          ],
+          "stateMutability": "nonpayable",
+          "tier": "primary",
+          "signature": "setHomeConfig(uint64,uint64,address,address)"
+        },
+        {
+          "name": "setHopSender",
+          "inputs": [
+            {
+              "name": "sender",
+              "type": "address",
+              "internalType": "address"
+            },
+            {
+              "name": "allowed",
+              "type": "bool",
+              "internalType": "bool"
+            }
+          ],
+          "stateMutability": "nonpayable",
+          "tier": "primary",
+          "signature": "setHopSender(address,bool)"
+        },
+        {
+          "name": "setLaneController",
+          "inputs": [
+            {
+              "name": "controller",
+              "type": "address",
+              "internalType": "address"
+            }
+          ],
+          "stateMutability": "nonpayable",
+          "tier": "primary",
+          "signature": "setLaneController(address)"
+        },
+        {
+          "name": "setRemoteExecutor",
+          "inputs": [
+            {
+              "name": "chainSelector",
+              "type": "uint64",
+              "internalType": "uint64"
+            },
+            {
+              "name": "executor",
+              "type": "address",
+              "internalType": "address"
+            }
+          ],
+          "stateMutability": "nonpayable",
+          "tier": "primary",
+          "signature": "setRemoteExecutor(uint64,address)"
+        },
+        {
+          "name": "transferOwnership",
+          "inputs": [
+            {
+              "name": "newOwner",
+              "type": "address",
+              "internalType": "address"
+            }
+          ],
+          "stateMutability": "nonpayable",
+          "tier": "primary",
+          "signature": "transferOwnership(address)"
+        },
+        {
+          "name": "unpause",
+          "inputs": [],
+          "stateMutability": "nonpayable",
+          "tier": "secondary",
+          "signature": "unpause()"
+        }
+      ]
+    },
+    {
+      "name": "LaneToken",
+      "sourcePath": "src/core/LaneToken.sol",
+      "sourceHash": "sha256:26a10393f2c93fe8d89973a54bea3af7e16c8945a59d86b8ffe6e85eaaf78fac",
+      "constructor": {
+        "inputs": [
+          {
+            "name": "router",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "underlyingToken",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "vrfCoordinator",
+            "type": "address",
+            "internalType": "address"
+          },
+          {
+            "name": "vrfSubscriptionId",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "gasLane",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "chainId",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "localChainSelector",
+            "type": "uint64",
+            "internalType": "uint64"
+          },
+          {
+            "name": "supportedChains",
+            "type": "array",
+            "internalType": "uint256[]"
+          }
+        ],
+        "stateMutability": "nonpayable"
+      },
+      "functions": [
+        {
+          "name": "abandonGame",
+          "inputs": [
+            {
+              "name": "gameId",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ],
+          "stateMutability": "nonpayable",
+          "tier": "primary",
+          "signature": "abandonGame(uint256)"
+        },
+        {
+          "name": "acceptOwnership",
+          "inputs": [],
+          "stateMutability": "nonpayable",
+          "tier": "primary",
+          "signature": "acceptOwnership()"
+        },
+        {
+          "name": "ccipReceive",
+          "inputs": [
+            {
+              "name": "message",
+              "type": "tuple",
+              "internalType": "Client.Any2EVMMessage"
+            }
+          ],
+          "stateMutability": "nonpayable",
+          "tier": "primary",
+          "signature": "ccipReceive(Client.Any2EVMMessage)"
+        },
+        {
+          "name": "deposit",
+          "inputs": [
+            {
+              "name": "amount",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ],
+          "stateMutability": "nonpayable",
+          "tier": "primary",
+          "signature": "deposit(uint256)"
+        },
+        {
+          "name": "rawFulfillRandomWords",
+          "inputs": [
+            {
+              "name": "requestId",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "randomWords",
+              "type": "array",
+              "internalType": "uint256[]"
+            }
+          ],
+          "stateMutability": "nonpayable",
+          "tier": "primary",
+          "signature": "rawFulfillRandomWords(uint256,uint256[])"
+        },
+        {
+          "name": "setCoordinator",
+          "inputs": [
+            {
+              "name": "_vrfCoordinator",
+              "type": "address",
+              "internalType": "address"
+            }
+          ],
+          "stateMutability": "nonpayable",
+          "tier": "primary",
+          "signature": "setCoordinator(address)"
+        },
+        {
+          "name": "setRemoteLaneToken",
+          "inputs": [
+            {
+              "name": "chainSelector",
+              "type": "uint64",
+              "internalType": "uint64"
+            },
+            {
+              "name": "laneToken",
+              "type": "address",
+              "internalType": "address"
+            }
+          ],
+          "stateMutability": "nonpayable",
+          "tier": "primary",
+          "signature": "setRemoteLaneToken(uint64,address)"
+        },
+        {
+          "name": "startGame",
+          "inputs": [
+            {
+              "name": "destinationChainSelector",
+              "type": "uint64",
+              "internalType": "uint64"
+            },
+            {
+              "name": "amount",
+              "type": "uint256",
+              "internalType": "uint256"
+            },
+            {
+              "name": "maxHops",
+              "type": "uint8",
+              "internalType": "uint8"
+            }
+          ],
+          "stateMutability": "nonpayable",
+          "tier": "primary",
+          "signature": "startGame(uint64,uint256,uint8)"
+        },
+        {
+          "name": "transferAdmin",
+          "inputs": [
+            {
+              "name": "newAdmin",
+              "type": "address",
+              "internalType": "address"
+            }
+          ],
+          "stateMutability": "nonpayable",
+          "tier": "primary",
+          "signature": "transferAdmin(address)"
+        },
+        {
+          "name": "transferOwnership",
+          "inputs": [
+            {
+              "name": "to",
+              "type": "address",
+              "internalType": "address"
+            }
+          ],
+          "stateMutability": "nonpayable",
+          "tier": "primary",
+          "signature": "transferOwnership(address)"
+        },
+        {
+          "name": "withdraw",
+          "inputs": [
+            {
+              "name": "amount",
+              "type": "uint256",
+              "internalType": "uint256"
+            }
+          ],
+          "stateMutability": "nonpayable",
+          "tier": "primary",
+          "signature": "withdraw(uint256)"
+        }
+      ]
+    }
+  ],
+  "handlers": {
+    "Handlers.sol": "sha256:1f557e55bca20d2c89981f00c2bb3accaf3f4fe6e899c81a4dbf36a865f008df",
+    "LaneControllerHandler.sol": "sha256:936e4062e26f7cf3af62feede601191c5a74d52e30246099a193f19bd3d4c7ee",
+    "LaneExecutorHandler.sol": "sha256:8b6f196fe160fe07bda2c3d4f36a91057e0d5dc3a945b62a61e44913d6c73edc",
+    "LaneTokenHandler.sol": "sha256:0f1d73c69abc848ade3b53cc9c3bc72501f7f52613490374ae7cd27b908d9e7f"
+  },
+  "properties": [
+    {
+      "id": "GL-01",
+      "checkbox": "x",
+      "functionName": null,
+      "file": null
+    },
+    {
+      "id": "GL-02",
+      "checkbox": "x",
+      "functionName": null,
+      "file": null
+    },
+    {
+      "id": "GL-03",
+      "checkbox": "x",
+      "functionName": null,
+      "file": null
+    },
+    {
+      "id": "GL-04",
+      "checkbox": "x",
+      "functionName": null,
+      "file": null
+    },
+    {
+      "id": "GL-05",
+      "checkbox": "x",
+      "functionName": null,
+      "file": null
+    },
+    {
+      "id": "GL-06",
+      "checkbox": "x",
+      "functionName": null,
+      "file": null
+    },
+    {
+      "id": "GL-07",
+      "checkbox": "x",
+      "functionName": null,
+      "file": null
+    },
+    {
+      "id": "SP-01",
+      "checkbox": "x",
+      "functionName": null,
+      "file": null
+    },
+    {
+      "id": "SP-02",
+      "checkbox": "x",
+      "functionName": null,
+      "file": null
+    },
+    {
+      "id": "SP-03",
+      "checkbox": "x",
+      "functionName": null,
+      "file": null
+    }
+  ]
+}
