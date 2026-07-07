@@ -136,8 +136,10 @@ contract FullSmokeSoloTest is Test {
         assertEq(laneToken.s_balances(player), START_AMOUNT);
 
         // Game 2 reuses the returned stake: 2 hops, needs one VRF fulfillment.
+        vm.warp(block.timestamp + 1);
         vm.prank(player);
         laneToken.startGame(chainSelector, START_AMOUNT, 2);
+        vm.warp(block.timestamp + 1);
         _fulfillNextHop(1, 7);
 
         (,,, uint8 hopsCompleted,,, bool active2) = laneToken.getGameRound(2);

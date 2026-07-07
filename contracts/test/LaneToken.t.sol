@@ -49,8 +49,8 @@ contract LaneTokenTest is Test {
             LOCAL_SELECTOR,
             supportedChains
         );
-        laneToken.setRemoteLaneToken(MUMBAI_SELECTOR, mumbaiPeer);
-        laneToken.setRemoteLaneToken(FUJI_SELECTOR, fujiPeer);
+        laneToken.setRemoteLaneToken(MUMBAI_SELECTOR, address(laneToken));
+        laneToken.setRemoteLaneToken(FUJI_SELECTOR, address(laneToken));
 
         mockUsdc.mint(player, START_AMOUNT);
         vm.startPrank(player);
@@ -113,7 +113,7 @@ contract LaneTokenTest is Test {
         Client.Any2EVMMessage memory message = Client.Any2EVMMessage({
             messageId: bytes32(uint256(0x123)),
             sourceChainSelector: MUMBAI_SELECTOR,
-            sender: abi.encode(mumbaiPeer),
+            sender: abi.encode(address(laneToken)),
             data: _hopData(
                 foreignKey,
                 LOCAL_SELECTOR,
@@ -139,6 +139,7 @@ contract LaneTokenTest is Test {
         mockVrfCoordinator.fulfillRandomWords(1, address(laneToken), randomWords);
 
         vm.warp(block.timestamp + timePassed);
+        message.messageId = bytes32(uint256(0x124));
         message.data = _hopData(
             foreignKey,
             LOCAL_SELECTOR,
@@ -150,7 +151,7 @@ contract LaneTokenTest is Test {
             block.timestamp - timePassed
         );
         message.sourceChainSelector = FUJI_SELECTOR;
-        message.sender = abi.encode(fujiPeer);
+        message.sender = abi.encode(address(laneToken));
         message.destTokenAmounts = _tokenAmounts(START_AMOUNT);
 
         vm.expectEmit(true, true, false, false);
@@ -176,7 +177,7 @@ contract LaneTokenTest is Test {
         Client.Any2EVMMessage memory bootstrap = Client.Any2EVMMessage({
             messageId: bytes32(uint256(0x1)),
             sourceChainSelector: MUMBAI_SELECTOR,
-            sender: abi.encode(mumbaiPeer),
+            sender: abi.encode(address(laneToken)),
             data: _hopData(
                 foreignKey,
                 uint64(remoteChainId),
@@ -196,7 +197,7 @@ contract LaneTokenTest is Test {
         Client.Any2EVMMessage memory collision = Client.Any2EVMMessage({
             messageId: bytes32(uint256(0x2)),
             sourceChainSelector: MUMBAI_SELECTOR,
-            sender: abi.encode(mumbaiPeer),
+            sender: abi.encode(address(laneToken)),
             data: _hopData(
                 foreignKey,
                 uint64(remoteChainId),

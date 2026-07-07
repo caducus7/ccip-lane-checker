@@ -72,6 +72,8 @@ contract LaneController is LaneControllerPausable, ILaneController, IReceiver, R
     uint48 public lastRoundCreatedAt;
     /// @notice Seconds after the winner lane finishes before unclaimed shares may be swept.
     uint48 public claimWindow;
+    /// @notice After the winner lane finishes, settlement may proceed without the runner-up lane.
+    uint48 public runnerUpSettlementTimeout;
 
     event RoundCreated(uint256 indexed roundId, uint8 laneCount);
     event BetPlaced(uint256 indexed roundId, uint8 indexed laneId, address indexed bettor, uint256 amount);
@@ -108,11 +110,13 @@ contract LaneController is LaneControllerPausable, ILaneController, IReceiver, R
     uint256 public constant MAX_HOPS = 16;
     uint48 public constant DEFAULT_ROUND_COOLDOWN = 60 seconds;
     uint48 public constant DEFAULT_CLAIM_WINDOW = 7 days;
+    uint48 public constant DEFAULT_RUNNER_UP_SETTLEMENT_TIMEOUT = 7 days;
     uint256 public constant MAX_CLOCK_SKEW = 15 minutes;
 
     event UnclaimedSwept(uint256 indexed roundId, uint256 amount);
     event RoundCooldownUpdated(uint48 cooldown);
     event ClaimWindowUpdated(uint48 window);
+    event RunnerUpSettlementTimeoutUpdated(uint48 timeout);
 
     modifier onlyRound(uint256 roundId) {
         if (roundId == 0 || roundId > currentRoundId) revert InvalidRound();
@@ -144,6 +148,7 @@ contract LaneController is LaneControllerPausable, ILaneController, IReceiver, R
         creForwarder = _creForwarder;
         roundCooldown = DEFAULT_ROUND_COOLDOWN;
         claimWindow = DEFAULT_CLAIM_WINDOW;
+        runnerUpSettlementTimeout = DEFAULT_RUNNER_UP_SETTLEMENT_TIMEOUT;
     }
 
     function setRoundCooldown(uint48 cooldown) external onlyOwner {
@@ -154,6 +159,11 @@ contract LaneController is LaneControllerPausable, ILaneController, IReceiver, R
     function setClaimWindow(uint48 window) external onlyOwner {
         claimWindow = window;
         emit ClaimWindowUpdated(window);
+    }
+
+    function setRunnerUpSettlementTimeout(uint48 timeout) external onlyOwner {
+        runnerUpSettlementTimeout = timeout;
+        emit RunnerUpSettlementTimeoutUpdated(timeout);
     }
 
     function setCreForwarder(address forwarder) external onlyOwner {
@@ -442,10 +452,16 @@ contract LaneController is LaneControllerPausable, ILaneController, IReceiver, R
 
     function _runnerUpResolved(Round storage round) internal view returns (bool) {
         if (round.runnerUpLaneId != NO_LANE) return true;
+
         uint8 winner = round.winningLaneId;
+        if (winner == NO_LANE) return false;
+
+        uint256 deadline = round.lanes[winner].finishTime + runnerUpSettlementTimeout;
+        bool timedOut = block.timestamp > deadline;
+
         for (uint8 i = 0; i < round.laneCount; ++i) {
             if (i == winner) continue;
-            if (!round.lanes[i].finished) return false;
+            if (!round.lanes[i].finished && !timedOut) return false;
         }
         return true;
     }

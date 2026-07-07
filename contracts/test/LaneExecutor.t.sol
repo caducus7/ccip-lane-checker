@@ -152,4 +152,19 @@ contract LaneExecutorTest is Test {
         fresh.setHomeConfig(LOCAL_SELECTOR, LOCAL_SELECTOR, address(controller), address(fresh));
         assertEq(fresh.laneController(), address(controller));
     }
+
+    function test_onReport_sendHop_selfCall_succeeds() public {
+        executor.setCreForwarder(cre);
+        executor.setRemoteExecutor(HOP_CHAIN, address(executor));
+        vm.deal(address(executor), 1 ether);
+
+        vm.prank(cre);
+        uint256 roundId = controller.createRound(_lanePaths());
+        vm.prank(cre);
+        controller.startRace(roundId);
+
+        bytes memory report = abi.encodeWithSelector(LaneExecutor.sendHop.selector, roundId, uint8(0), HOP_CHAIN);
+        vm.prank(cre);
+        executor.onReport("", report);
+    }
 }

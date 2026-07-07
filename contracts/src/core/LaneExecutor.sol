@@ -56,7 +56,10 @@ contract LaneExecutor is CCIPReceiver, Ownable, Pausable, ILaneExecutor, IReceiv
     uint256 public constant MAX_CLOCK_SKEW = 15 minutes;
 
     modifier onlyHopSender() {
-        if (msg.sender != owner() && !hopSenders[msg.sender] && msg.sender != creForwarder) {
+        if (
+            msg.sender != owner() && !hopSenders[msg.sender] && msg.sender != creForwarder
+                && msg.sender != address(this)
+        ) {
             revert NotAuthorized();
         }
         _;
@@ -117,7 +120,7 @@ contract LaneExecutor is CCIPReceiver, Ownable, Pausable, ILaneExecutor, IReceiv
     }
 
     /// @inheritdoc IReceiver
-    function onReport(bytes calldata, bytes calldata report) external nonReentrant {
+    function onReport(bytes calldata, bytes calldata report) external nonReentrant whenNotPaused {
         if (msg.sender != creForwarder) revert NotAuthorized();
         CreReportAuth.assertExecutorReport(report);
         (bool ok,) = address(this).call(report);
