@@ -27,7 +27,7 @@ abstract contract LaneControllerHandler is Properties {
     roundId = knownRoundIds[roundId % knownRoundIds.length];
     if (controller.getRoundState(roundId) != LaneController.RoundState.Betting) return;
     uint8 laneId = uint8(laneSeed % 2);
-    amount = clampBetween(amount, 1, bettingToken.balanceOf(actor) / 10);
+        amount = clampBetween(amount, controller.minBet(), bettingToken.balanceOf(actor) / 10);
     if (amount == 0) return;
     uint256 poolBefore = controller.getLanePool(roundId, laneId);
     controller.buyLaneTokens(roundId, laneId, amount);

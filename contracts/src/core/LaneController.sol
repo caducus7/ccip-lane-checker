@@ -69,9 +69,12 @@ contract LaneController is LaneControllerPausable, ILaneController, IReceiver, R
     uint256 public currentRoundId;
     mapping(uint256 => Round) private s_rounds;
     mapping(address => bool) public hopRecorders;
+    address public primaryHopRecorder;
 
     uint48 public roundCooldown;
     uint48 public lastRoundCreatedAt;
+    /// @notice Minimum bet per `buyLaneTokens` call; lanes below this are treated as empty for payout redirect.
+    uint256 public minBet;
     /// @notice Seconds after the winner lane finishes before unclaimed shares may be swept.
     uint48 public claimWindow;
     /// @notice After the winner lane finishes, settlement may proceed without the runner-up lane.
@@ -113,12 +116,15 @@ contract LaneController is LaneControllerPausable, ILaneController, IReceiver, R
     uint48 public constant DEFAULT_ROUND_COOLDOWN = 60 seconds;
     uint48 public constant DEFAULT_CLAIM_WINDOW = 7 days;
     uint48 public constant DEFAULT_RUNNER_UP_SETTLEMENT_TIMEOUT = 7 days;
+    /// @dev Default 1 USDC for 6-decimal betting tokens.
+    uint256 public constant DEFAULT_MIN_BET = 1e6;
     uint256 public constant MAX_CLOCK_SKEW = 15 minutes;
 
     event UnclaimedSwept(uint256 indexed roundId, uint256 amount);
     event RoundCooldownUpdated(uint48 cooldown);
     event ClaimWindowUpdated(uint48 window);
     event RunnerUpSettlementTimeoutUpdated(uint48 timeout);
+    event MinBetUpdated(uint256 minBet);
 
     modifier onlyRound(uint256 roundId) {
         if (roundId == 0 || roundId > currentRoundId) revert InvalidRound();
@@ -151,6 +157,12 @@ contract LaneController is LaneControllerPausable, ILaneController, IReceiver, R
         roundCooldown = DEFAULT_ROUND_COOLDOWN;
         claimWindow = DEFAULT_CLAIM_WINDOW;
         runnerUpSettlementTimeout = DEFAULT_RUNNER_UP_SETTLEMENT_TIMEOUT;
+        minBet = DEFAULT_MIN_BET;
+    }
+
+    function setMinBet(uint256 newMinBet) external onlyOwner {
+        minBet = newMinBet;
+        emit MinBetUpdated(newMinBet);
     }
 
     function setRoundCooldown(uint48 cooldown) external onlyOwner {
@@ -191,6 +203,14 @@ contract LaneController is LaneControllerPausable, ILaneController, IReceiver, R
     }
 
     function setHopRecorder(address recorder, bool allowed) external onlyOwner {
+        if (allowed) {
+            if (primaryHopRecorder != address(0) && primaryHopRecorder != recorder) {
+                hopRecorders[primaryHopRecorder] = false;
+            }
+            primaryHopRecorder = recorder;
+        } else if (primaryHopRecorder == recorder) {
+            primaryHopRecorder = address(0);
+        }
         hopRecorders[recorder] = allowed;
     }
 
@@ -227,7 +247,7 @@ contract LaneController is LaneControllerPausable, ILaneController, IReceiver, R
         onlyRound(roundId)
         whenNotPaused
     {
-        if (amount == 0) revert InvalidAmount();
+        if (amount == 0 || amount < minBet) revert InvalidAmount();
 
         Round storage round = s_rounds[roundId];
         if (round.state != RoundState.Betting) revert BettingClosed();
@@ -301,6 +321,7 @@ contract LaneController is LaneControllerPausable, ILaneController, IReceiver, R
 
         round.winningLaneId = laneId;
         round.winnerDeclared = true;
+        round.runnerUpSettlementTimeoutSnapshot = runnerUpSettlementTimeout;
         round.state = RoundState.Finished;
         emit WinnerDeclared(roundId, laneId, lane.finishTime);
     }
@@ -328,7 +349,7 @@ contract LaneController is LaneControllerPausable, ILaneController, IReceiver, R
         uint256 winnerShare;
         uint8 payoutLaneId = _winnerPayoutLane(round, winningLaneId);
 
-        if (payoutLaneId != NO_LANE && round.lanePool[payoutLaneId] > 0) {
+        if (payoutLaneId != NO_LANE && _lanePoolEligible(round.lanePool[payoutLaneId])) {
             winnerShare = payout.winner;
             round.winnerShare = winnerShare;
             round.winnerPayoutLaneId = payoutLaneId;
@@ -336,7 +357,7 @@ contract LaneController is LaneControllerPausable, ILaneController, IReceiver, R
             platformAmount += payout.winner;
         }
 
-        if (runnerUpLaneId != NO_LANE && round.lanePool[runnerUpLaneId] > 0) {
+        if (runnerUpLaneId != NO_LANE && _lanePoolEligible(round.lanePool[runnerUpLaneId])) {
             round.runnerUpShare = payout.runnerUp;
         } else {
             platformAmount += payout.runnerUp;
@@ -470,15 +491,19 @@ contract LaneController is LaneControllerPausable, ILaneController, IReceiver, R
         return true;
     }
 
+    function _lanePoolEligible(uint256 pool) internal view returns (bool) {
+        return pool >= minBet;
+    }
+
     function _winnerPayoutLane(Round storage round, uint8 winningLaneId) internal view returns (uint8) {
-        if (round.lanePool[winningLaneId] > 0) return winningLaneId;
+        if (_lanePoolEligible(round.lanePool[winningLaneId])) return winningLaneId;
 
         uint8 bestLane = NO_LANE;
         uint256 bestPool;
         for (uint8 i = 0; i < round.laneCount; ++i) {
             if (i == winningLaneId) continue;
             uint256 pool = round.lanePool[i];
-            if (pool > bestPool) {
+            if (_lanePoolEligible(pool) && pool > bestPool) {
                 bestPool = pool;
                 bestLane = i;
             }

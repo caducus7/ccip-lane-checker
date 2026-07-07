@@ -315,8 +315,8 @@ contract LaneControllerTest is Test {
 
     /// @dev Betting accounting: pools always sum, transfers always match.
     function testFuzz_buyLaneTokens_accounting(uint96 amountA, uint96 amountB, bool sameLane) public {
-        amountA = uint96(bound(amountA, 1, 500_000e6));
-        amountB = uint96(bound(amountB, 1, 500_000e6));
+        amountA = uint96(bound(amountA, controller.minBet(), 500_000e6));
+        amountB = uint96(bound(amountB, controller.minBet(), 500_000e6));
 
         uint256 roundId = _createRound();
 
@@ -335,8 +335,8 @@ contract LaneControllerTest is Test {
 
     /// @dev Settlement conservation: treasury + gasReserve + claims == total pool (winner-lane-only bets).
     function testFuzz_settlement_conservation(uint96 betWinner, uint96 betRunnerUp) public {
-        betWinner = uint96(bound(betWinner, 1, 500_000e6));
-        betRunnerUp = uint96(bound(betRunnerUp, 1, 500_000e6));
+        betWinner = uint96(bound(betWinner, controller.minBet(), 500_000e6));
+        betRunnerUp = uint96(bound(betRunnerUp, controller.minBet(), 500_000e6));
 
         uint256 roundId = _createRound();
         vm.prank(player);

@@ -86,7 +86,7 @@ abstract contract Base is StringUtils, Clamp, Deployer, Math {
     }
 
     modifier asExecutor() virtual {
-        vm.startPrank(admin);
+        vm.startPrank(address(executor));
         _;
         vm.stopPrank();
     }
@@ -104,7 +104,6 @@ abstract contract Base is StringUtils, Clamp, Deployer, Math {
 
         bettingToken = new MockERC20("USDC", "USDC", 6);
         controller = new LaneController(admin, address(bettingToken), treasury, gasReserve, cre);
-        controller.setHopRecorder(admin, true);
         controller.setRoundCooldown(0);
 
         execRouter = new MockCCIPRouter();

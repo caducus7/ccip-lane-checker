@@ -118,7 +118,12 @@ contract LaneExecutor is CCIPReceiver, Ownable, Pausable, ILaneExecutor, IReceiv
 
     function setCreForwarder(address forwarder) external onlyOwner {
         if (forwarder == address(0)) revert ZeroAddress();
+        address oldForwarder = creForwarder;
         creForwarder = forwarder;
+        if (oldForwarder != address(0)) {
+            hopSenders[oldForwarder] = false;
+        }
+        hopSenders[forwarder] = true;
     }
 
     /// @inheritdoc IReceiver

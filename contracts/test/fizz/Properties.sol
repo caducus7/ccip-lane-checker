@@ -107,12 +107,12 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
         uint8 payoutLaneId = _winnerPayoutLane(roundId, winningLaneId);
 
         uint256 winnerShare;
-        if (payoutLaneId != type(uint8).max && controller.getLanePool(roundId, payoutLaneId) > 0) {
+        if (payoutLaneId != type(uint8).max && controller.getLanePool(roundId, payoutLaneId) >= controller.minBet()) {
             winnerShare = p.winner;
         }
 
         uint256 runnerUpShare;
-        if (runnerUpLaneId != type(uint8).max && controller.getLanePool(roundId, runnerUpLaneId) > 0) {
+        if (runnerUpLaneId != type(uint8).max && controller.getLanePool(roundId, runnerUpLaneId) >= controller.minBet()) {
             runnerUpShare = p.runnerUp;
         }
 
@@ -121,14 +121,14 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     }
 
     function _winnerPayoutLane(uint256 roundId, uint8 winningLaneId) internal view returns (uint8) {
-        if (controller.getLanePool(roundId, winningLaneId) > 0) return winningLaneId;
+        if (controller.getLanePool(roundId, winningLaneId) >= controller.minBet()) return winningLaneId;
 
         uint8 bestLane = type(uint8).max;
         uint256 bestPool;
         for (uint8 i = 0; i < 2; i++) {
             if (i == winningLaneId) continue;
             uint256 pool = controller.getLanePool(roundId, i);
-            if (pool > bestPool) {
+            if (pool >= controller.minBet() && pool > bestPool) {
                 bestPool = pool;
                 bestLane = i;
             }

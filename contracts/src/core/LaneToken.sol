@@ -50,6 +50,7 @@ contract LaneToken is CCIPReceiver, VRFConsumerBaseV2Plus {
     uint256 public s_gameCounter;
     mapping(uint256 => GameRound) public s_gameRounds;
     mapping(bytes32 => uint256) public s_foreignKeyToGameId;
+    mapping(bytes32 => bool) public s_foreignKeySettled;
     mapping(bytes32 => uint256) public s_messageIdToGameId;
     mapping(bytes32 => bool) private s_deliveredMessageIds;
     mapping(uint256 => uint256) public s_vrfRequestToGameId;
@@ -84,6 +85,9 @@ contract LaneToken is CCIPReceiver, VRFConsumerBaseV2Plus {
     error UnwiredRemoteLaneToken(uint64 chainSelector);
     error DuplicateMessage(bytes32 messageId);
     error BridgeCustodyMismatch();
+    error AlreadySettled(bytes32 foreignKey);
+
+    bytes32 private constant SETTLEMENT_MESSAGE_TAG = keccak256("LaneToken.Settlement");
 
     uint8 public constant MAX_HOPS = 16;
     uint256 public constant GAME_ABANDON_TIMEOUT = 7 days;
@@ -224,6 +228,12 @@ contract LaneToken is CCIPReceiver, VRFConsumerBaseV2Plus {
         address sender = abi.decode(message.sender, (address));
         if (sender != expectedSender) revert UnauthorizedSource(sender, expectedSender);
 
+        if (_isSettlementMessage(message.data)) {
+            if (message.destTokenAmounts.length != 0) revert GameMismatch();
+            _handleSettlementMessage(message.data);
+            return;
+        }
+
         HopPayload memory payload = abi.decode(message.data, (HopPayload));
         if (payload.sendTime > block.timestamp + MAX_CLOCK_SKEW) revert("future sendTime");
 
@@ -247,6 +257,13 @@ contract LaneToken is CCIPReceiver, VRFConsumerBaseV2Plus {
     }
 
     function _recordHop(uint256 gameId, HopPayload memory payload, uint64 sourceSelector) internal {
+        if (s_foreignKeySettled[payload.foreignKey]) {
+            GameRound storage settled = s_gameRounds[gameId];
+            settled.isActive = false;
+            settled.tokensBridgedOut = false;
+            return;
+        }
+
         GameRound storage round = s_gameRounds[gameId];
         if (!round.isActive && round.tokensBridgedOut && round.hopCount < round.maxHops) {
             round.isActive = true;
@@ -263,11 +280,7 @@ contract LaneToken is CCIPReceiver, VRFConsumerBaseV2Plus {
         emit HopCompleted(gameId, sourceSelector, latency, round.hopCount);
 
         if (round.hopCount >= round.maxHops) {
-            round.isActive = false;
-            s_tokensInPlay -= round.amount;
-            s_balances[round.initiator] += round.amount;
-            s_totalBooked += round.amount;
-            emit GameFinished(gameId, round.totalLatency, round.hopCount);
+            _finishGame(gameId, round.foreignKey, round.initiator, round.amount, round.totalLatency, round.hopCount);
             return;
         }
 
@@ -393,9 +406,93 @@ contract LaneToken is CCIPReceiver, VRFConsumerBaseV2Plus {
         }
 
         GameRound storage round = s_gameRounds[gameId];
+        if (!round.isActive) {
+            return messageId;
+        }
         round.tokensBridgedOut = true;
         round.isActive = false;
         s_tokensInPlay -= amount;
+    }
+
+    function _isSettlementMessage(bytes memory data) internal pure returns (bool) {
+        if (data.length < 64) return false;
+        (bytes32 tag,) = abi.decode(data, (bytes32, bytes32));
+        return tag == SETTLEMENT_MESSAGE_TAG;
+    }
+
+    function _handleSettlementMessage(bytes memory data) internal {
+        (, bytes32 foreignKey) = abi.decode(data, (bytes32, bytes32));
+        _applyForeignKeySettlement(foreignKey);
+    }
+
+    function _applyForeignKeySettlement(bytes32 foreignKey) internal {
+        if (s_foreignKeySettled[foreignKey]) return;
+        s_foreignKeySettled[foreignKey] = true;
+
+        uint256 gameId = s_foreignKeyToGameId[foreignKey];
+        if (gameId == 0) return;
+
+        GameRound storage round = s_gameRounds[gameId];
+        if (round.isActive) {
+            round.isActive = false;
+            s_tokensInPlay -= round.amount;
+        }
+        round.tokensBridgedOut = false;
+    }
+
+    function _finishGame(
+        uint256 gameId,
+        bytes32 foreignKey,
+        address initiator,
+        uint256 amount,
+        uint256 totalLatency,
+        uint8 totalHops
+    ) internal {
+        GameRound storage round = s_gameRounds[gameId];
+        round.isActive = false;
+        round.tokensBridgedOut = false;
+        s_tokensInPlay -= amount;
+
+        if (s_foreignKeySettled[foreignKey]) {
+            emit GameFinished(gameId, totalLatency, totalHops);
+            return;
+        }
+
+        s_foreignKeySettled[foreignKey] = true;
+        s_balances[initiator] += amount;
+        s_totalBooked += amount;
+        _propagateSettlement(foreignKey);
+        emit GameFinished(gameId, totalLatency, totalHops);
+    }
+
+    function _propagateSettlement(bytes32 foreignKey) internal {
+        bytes memory data = abi.encode(SETTLEMENT_MESSAGE_TAG, foreignKey);
+        uint256 chainCount = s_supportedChainSelectors.length;
+        for (uint256 i = 0; i < chainCount; i++) {
+            uint64 chainSelector = uint64(s_supportedChainSelectors[i]);
+            if (chainSelector == i_localChainSelector) continue;
+            address remote = remoteLaneTokens[chainSelector];
+            if (remote == address(0)) continue;
+            _bridgeSettlement(chainSelector, remote, data);
+        }
+    }
+
+    function _bridgeSettlement(uint64 destinationChainSelector, address receiver, bytes memory messageData)
+        internal
+    {
+        Client.EVMTokenAmount[] memory tokenAmounts = new Client.EVMTokenAmount[](0);
+
+        Client.EVM2AnyMessage memory message = Client.EVM2AnyMessage({
+            receiver: abi.encode(receiver),
+            data: messageData,
+            tokenAmounts: tokenAmounts,
+            extraArgs: "",
+            feeToken: address(0)
+        });
+
+        uint256 fee = s_router.getFee(destinationChainSelector, message);
+        if (address(this).balance < fee) revert InsufficientCcipFee(fee, address(this).balance);
+        s_router.ccipSend{value: fee}(destinationChainSelector, message);
     }
 
     function getGameRound(uint256 gameId)
