@@ -45,6 +45,8 @@ contract CCIPLocalTest is Test {
             address(vrfCoordinator),
             1,
             bytes32(0),
+            block.chainid,
+            chainSelector,
             supportedChains
         );
         laneToken.setRemoteLaneToken(chainSelector, address(laneToken));
@@ -107,7 +109,16 @@ contract CCIPLocalTest is Test {
             messageId: keccak256("forged"),
             sourceChainSelector: chainSelector,
             sender: abi.encode(attacker),
-            data: abi.encode(uint256(1), block.timestamp),
+            data: abi.encode(
+                keccak256(abi.encode(block.chainid, address(laneToken), uint256(1))),
+                chainSelector,
+                address(laneToken),
+                uint256(1),
+                player,
+                START_AMOUNT,
+                uint8(2),
+                block.timestamp
+            ),
             destTokenAmounts: new Client.EVMTokenAmount[](0)
         });
 

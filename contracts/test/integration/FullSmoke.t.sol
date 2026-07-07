@@ -50,6 +50,8 @@ contract FullSmokeSoloTest is Test {
             address(vrfCoordinator),
             1,
             bytes32(0),
+            block.chainid,
+            chainSelector,
             supportedChains
         );
         laneToken.setRemoteLaneToken(chainSelector, address(laneToken));
@@ -182,6 +184,7 @@ contract FullSmokeParimutuelTest is Test {
         executor = new LaneExecutor(address(sourceRouter), address(this));
 
         executor.setLaneController(address(controller));
+        executor.setHomeConfig(localSelector, localSelector, address(controller), address(executor));
         controller.setHopRecorder(address(executor), true);
         // Single local router: every "remote" executor is this executor.
         executor.setRemoteExecutor(localSelector, address(executor));
@@ -348,14 +351,15 @@ contract FullSmokeParimutuelTest is Test {
         // Sweep rounding dust to the platform; controller ends fully drained.
         if (residual > 0) {
             uint256 treasuryBefore = token.balanceOf(treasury);
+            vm.warp(block.timestamp + controller.claimWindow() + 1);
             controller.sweepUnclaimed(roundId);
             assertEq(token.balanceOf(treasury), treasuryBefore + residual);
         }
         assertEq(token.balanceOf(address(controller)), 0);
 
-        // Nothing left to claim for anyone.
+        // Nothing left to claim for anyone (sweep marks claims finalized).
         vm.prank(alice);
-        vm.expectRevert(LaneController.NothingToClaim.selector);
+        vm.expectRevert(LaneController.ClaimsSwept.selector);
         controller.claimPrize(roundId);
     }
 }

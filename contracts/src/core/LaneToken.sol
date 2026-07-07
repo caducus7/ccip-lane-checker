@@ -8,16 +8,18 @@ import {VRFV2PlusClient} from "@chainlink/contracts/src/v0.8/vrf/dev/libraries/V
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ICcipRouter} from "../interfaces/ICcipRouter.sol";
+import {StandardTokenTransfer} from "../libraries/StandardTokenTransfer.sol";
 
 /// @title LaneToken
 /// @notice Solo latency-challenge mode: one player races tokens across CCIP hops.
-/// @dev VRF v2.5 hop randomness is on-chain verifiable (fair for players).
-///      CCIP access goes through `ICcipRouter` — the single swap point for vNext.
+/// @dev VRF v2.5 hop randomness is on-chain verifiable. Only standard ERC20 underlying
+///      tokens are supported (no fee-on-transfer). Cross-chain games are keyed by a
+///      globally unique foreign key (origin chain, origin contract, origin game id).
 contract LaneToken is CCIPReceiver, VRFConsumerBaseV2Plus {
     using SafeERC20 for IERC20;
+    using StandardTokenTransfer for IERC20;
 
     struct GameRound {
-        // initiator / hopCount / maxHops / isActive share one slot.
         address initiator;
         uint8 hopCount;
         uint8 maxHops;
@@ -25,27 +27,33 @@ contract LaneToken is CCIPReceiver, VRFConsumerBaseV2Plus {
         uint256 totalLatency;
         uint256 lastSendTime;
         uint256 amount;
+        bytes32 foreignKey;
+        uint64 originChainSelector;
+        address originToken;
+        uint256 originGameId;
     }
 
     IERC20 public immutable i_underlyingToken;
+    uint256 private immutable i_chainId;
+    uint64 private immutable i_localChainSelector;
     mapping(address => uint256) public s_balances;
+    uint256 public s_totalBooked;
+    uint256 public s_tokensInPlay;
 
     uint256 private immutable i_vrfSubscriptionId;
     bytes32 private immutable i_gasLane;
-    /// @dev fulfillRandomWords performs a CCIP token send (getFee + ccipSend); 100k is far
-    ///      too low and would brick active games. Sized with headroom, below VRF's 2.5M cap.
     uint32 private constant CALLBACK_GAS_LIMIT = 1_500_000;
     uint16 private constant REQUEST_CONFIRMATIONS = 3;
     uint32 private constant NUM_WORDS = 1;
 
     uint256 public s_gameCounter;
     mapping(uint256 => GameRound) public s_gameRounds;
+    mapping(bytes32 => uint256) public s_foreignKeyToGameId;
     mapping(bytes32 => uint256) public s_messageIdToGameId;
     mapping(uint256 => uint256) public s_vrfRequestToGameId;
     uint256[] public s_supportedChainSelectors;
     ICcipRouter public immutable s_router;
 
-    /// @notice Trusted LaneToken peers per source chain (CCIP message.sender allowlist).
     mapping(uint64 => address) public remoteLaneTokens;
     address public admin;
 
@@ -63,6 +71,10 @@ contract LaneToken is CCIPReceiver, VRFConsumerBaseV2Plus {
     error UnknownSource(uint64 sourceChainSelector);
     error UnauthorizedSource(address sender, address expected);
     error InvalidZeroAddress();
+    error GameMismatch();
+    error InsufficientLiquidity();
+
+    uint256 public constant MAX_CLOCK_SKEW = 15 minutes;
 
     modifier onlyAdmin() {
         if (msg.sender != admin) revert NotAdmin();
@@ -75,12 +87,17 @@ contract LaneToken is CCIPReceiver, VRFConsumerBaseV2Plus {
         address vrfCoordinator,
         uint256 vrfSubscriptionId,
         bytes32 gasLane,
+        uint256 chainId,
+        uint64 localChainSelector,
         uint256[] memory supportedChains
     ) CCIPReceiver(router) VRFConsumerBaseV2Plus(vrfCoordinator) {
         if (router == address(0) || underlyingToken == address(0) || vrfCoordinator == address(0)) {
             revert InvalidZeroAddress();
         }
+        require(supportedChains.length > 0, "no supported chains");
         i_underlyingToken = IERC20(underlyingToken);
+        i_chainId = chainId;
+        i_localChainSelector = localChainSelector;
         i_vrfSubscriptionId = vrfSubscriptionId;
         i_gasLane = gasLane;
         s_supportedChainSelectors = supportedChains;
@@ -88,7 +105,6 @@ contract LaneToken is CCIPReceiver, VRFConsumerBaseV2Plus {
         admin = msg.sender;
     }
 
-    /// @notice Accepts native token used to pay CCIP fees (feeToken == address(0) in `_bridge`).
     receive() external payable {}
 
     function setRemoteLaneToken(uint64 chainSelector, address laneToken) external onlyAdmin {
@@ -102,23 +118,30 @@ contract LaneToken is CCIPReceiver, VRFConsumerBaseV2Plus {
     }
 
     function deposit(uint256 amount) external {
-        i_underlyingToken.safeTransferFrom(msg.sender, address(this), amount);
+        i_underlyingToken.transferFromExact(msg.sender, address(this), amount);
         s_balances[msg.sender] += amount;
+        s_totalBooked += amount;
         emit Deposited(msg.sender, amount);
     }
 
     function withdraw(uint256 amount) external {
         require(s_balances[msg.sender] >= amount, "Insufficient balance");
+        require(i_underlyingToken.balanceOf(address(this)) >= amount, "pool illiquid");
         s_balances[msg.sender] -= amount;
-        i_underlyingToken.safeTransfer(msg.sender, amount);
+        s_totalBooked -= amount;
+        require(i_underlyingToken.balanceOf(address(this)) >= s_totalBooked, "pool illiquid");
+        i_underlyingToken.transferExact(msg.sender, amount);
         emit Withdrawn(msg.sender, amount);
     }
 
     function startGame(uint64 destinationChainSelector, uint256 amount, uint8 maxHops) external returns (bytes32 messageId) {
         require(s_balances[msg.sender] >= amount, "Insufficient balance");
         s_balances[msg.sender] -= amount;
+        s_totalBooked -= amount;
+        s_tokensInPlay += amount;
 
         uint256 gameId = ++s_gameCounter;
+        bytes32 foreignKey = _foreignKey(gameId);
 
         s_gameRounds[gameId] = GameRound({
             initiator: msg.sender,
@@ -127,38 +150,77 @@ contract LaneToken is CCIPReceiver, VRFConsumerBaseV2Plus {
             isActive: true,
             totalLatency: 0,
             lastSendTime: block.timestamp,
-            amount: amount
+            amount: amount,
+            foreignKey: foreignKey,
+            originChainSelector: i_localChainSelector,
+            originToken: address(this),
+            originGameId: gameId
         });
+        s_foreignKeyToGameId[foreignKey] = gameId;
 
-        bytes memory messageData = abi.encode(gameId, block.timestamp);
+        bytes memory messageData = _encodeHopMessage(gameId, block.timestamp);
         messageId = _bridge(destinationChainSelector, amount, messageData);
         s_messageIdToGameId[messageId] = gameId;
 
         emit GameRoundStarted(gameId, msg.sender, amount, maxHops);
     }
 
+    struct HopPayload {
+        bytes32 foreignKey;
+        uint64 originChainSelector;
+        address originToken;
+        uint256 originGameId;
+        address initiator;
+        uint256 amount;
+        uint8 maxHops;
+        uint256 sendTime;
+    }
+
     function _ccipReceive(Client.Any2EVMMessage memory message) internal override {
-        address expectedSender = remoteLaneTokens[message.sourceChainSelector];
-        if (expectedSender == address(0)) revert UnknownSource(message.sourceChainSelector);
+        uint64 sourceSelector = message.sourceChainSelector;
+        address expectedSender = remoteLaneTokens[sourceSelector];
+        if (expectedSender == address(0)) revert UnknownSource(sourceSelector);
 
         address sender = abi.decode(message.sender, (address));
         if (sender != expectedSender) revert UnauthorizedSource(sender, expectedSender);
 
-        (uint256 gameId, uint256 sendTime) = abi.decode(message.data, (uint256, uint256));
+        HopPayload memory payload = abi.decode(message.data, (HopPayload));
+        if (payload.sendTime > block.timestamp + MAX_CLOCK_SKEW) revert("future sendTime");
+
+        _verifyInboundTokens(message, payload.amount);
+
+        uint256 gameId = _resolveInboundGameId(payload);
+        _recordHop(gameId, payload, sourceSelector);
+    }
+
+    function _resolveInboundGameId(HopPayload memory payload) internal returns (uint256 gameId) {
+        gameId = s_foreignKeyToGameId[payload.foreignKey];
+        if (gameId == 0) {
+            return _bootstrapInboundGame(payload);
+        }
+
+        GameRound storage existing = s_gameRounds[gameId];
+        if (
+            existing.initiator != payload.initiator || existing.amount != payload.amount
+                || existing.maxHops != payload.maxHops || existing.foreignKey != payload.foreignKey
+        ) revert GameMismatch();
+    }
+
+    function _recordHop(uint256 gameId, HopPayload memory payload, uint64 sourceSelector) internal {
         GameRound storage round = s_gameRounds[gameId];
         require(round.isActive, "Game is not active");
-        require(sendTime <= block.timestamp, "future sendTime");
 
-        uint256 latency = block.timestamp - sendTime;
+        uint256 latency = payload.sendTime > block.timestamp ? 0 : block.timestamp - payload.sendTime;
         round.totalLatency += latency;
-        uint8 hopCount = round.hopCount + 1;
-        round.hopCount = hopCount;
+        round.hopCount += 1;
 
-        emit HopCompleted(gameId, message.sourceChainSelector, latency, hopCount);
+        emit HopCompleted(gameId, sourceSelector, latency, round.hopCount);
 
-        if (hopCount >= round.maxHops) {
+        if (round.hopCount >= round.maxHops) {
             round.isActive = false;
+            s_tokensInPlay -= round.amount;
             s_balances[round.initiator] += round.amount;
+            s_totalBooked += round.amount;
             emit GameFinished(gameId, round.totalLatency, round.hopCount);
             return;
         }
@@ -188,9 +250,58 @@ contract LaneToken is CCIPReceiver, VRFConsumerBaseV2Plus {
         uint64 nextChainSelector = uint64(s_supportedChainSelectors[randomIndex]);
         round.lastSendTime = block.timestamp;
 
-        bytes memory messageData = abi.encode(gameId, round.lastSendTime);
+        bytes memory messageData = _encodeHopMessage(gameId, round.lastSendTime);
         bytes32 messageId = _bridge(nextChainSelector, round.amount, messageData);
         s_messageIdToGameId[messageId] = gameId;
+    }
+
+    function _bootstrapInboundGame(HopPayload memory payload) internal returns (uint256 gameId) {
+        gameId = ++s_gameCounter;
+        s_foreignKeyToGameId[payload.foreignKey] = gameId;
+        s_tokensInPlay += payload.amount;
+        s_gameRounds[gameId] = GameRound({
+            initiator: payload.initiator,
+            hopCount: 0,
+            maxHops: payload.maxHops,
+            isActive: true,
+            totalLatency: 0,
+            lastSendTime: payload.sendTime,
+            amount: payload.amount,
+            foreignKey: payload.foreignKey,
+            originChainSelector: payload.originChainSelector,
+            originToken: payload.originToken,
+            originGameId: payload.originGameId
+        });
+    }
+
+    function _encodeHopMessage(uint256 gameId, uint256 sendTime) internal view returns (bytes memory) {
+        GameRound storage round = s_gameRounds[gameId];
+        HopPayload memory payload = HopPayload({
+            foreignKey: round.foreignKey,
+            originChainSelector: round.originChainSelector,
+            originToken: round.originToken,
+            originGameId: round.originGameId,
+            initiator: round.initiator,
+            amount: round.amount,
+            maxHops: round.maxHops,
+            sendTime: sendTime
+        });
+        return abi.encode(payload);
+    }
+
+    function _foreignKey(uint256 originGameId) internal view returns (bytes32) {
+        return keccak256(abi.encode(i_chainId, address(this), originGameId));
+    }
+
+    function _verifyInboundTokens(Client.Any2EVMMessage memory message, uint256 expectedAmount) internal view {
+        uint256 received;
+        for (uint256 i = 0; i < message.destTokenAmounts.length; i++) {
+            Client.EVMTokenAmount memory tokenAmount = message.destTokenAmounts[i];
+            if (tokenAmount.token == address(i_underlyingToken)) {
+                received += tokenAmount.amount;
+            }
+        }
+        if (received != expectedAmount) revert GameMismatch();
     }
 
     function _bridge(uint64 destinationChainSelector, uint256 amount, bytes memory messageData)

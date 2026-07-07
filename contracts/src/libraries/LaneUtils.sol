@@ -8,7 +8,7 @@ library LaneUtils {
                 return (true, i);
             }
         }
-        return (false, 0);
+        return (false, type(uint256).max);
     }
 
     function requiredHops(uint64[] memory path) internal pure returns (uint8) {

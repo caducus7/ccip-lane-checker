@@ -18,6 +18,7 @@ contract LaneTokenTest is Test {
     address public mumbaiPeer = makeAddr("mumbaiPeer");
     address public fujiPeer = makeAddr("fujiPeer");
 
+    uint64 constant LOCAL_SELECTOR = 999_001;
     uint64 constant MUMBAI_SELECTOR = 12532609583862916517;
     uint64 constant FUJI_SELECTOR = 14767482510784806043;
     uint256 constant START_AMOUNT = 10 * 1e6;
@@ -44,6 +45,8 @@ contract LaneTokenTest is Test {
             address(mockVrfCoordinator),
             1,
             bytes32(0),
+            block.chainid,
+            LOCAL_SELECTOR,
             supportedChains
         );
         laneToken.setRemoteLaneToken(MUMBAI_SELECTOR, mumbaiPeer);
@@ -54,6 +57,27 @@ contract LaneTokenTest is Test {
         mockUsdc.approve(address(laneToken), START_AMOUNT);
         laneToken.deposit(START_AMOUNT);
         vm.stopPrank();
+    }
+
+    function _hopData(
+        bytes32 foreignKey,
+        uint64 originChainSelector,
+        address originToken,
+        uint256 originGameId,
+        address initiator,
+        uint256 amount,
+        uint8 maxHops,
+        uint256 sendTime
+    ) internal pure returns (bytes memory) {
+        return abi.encode(
+            foreignKey, originChainSelector, originToken, originGameId, initiator, amount, maxHops, sendTime
+        );
+    }
+
+    function _tokenAmounts(uint256 amount) internal view returns (Client.EVMTokenAmount[] memory) {
+        Client.EVMTokenAmount[] memory amounts = new Client.EVMTokenAmount[](1);
+        amounts[0] = Client.EVMTokenAmount({token: address(mockUsdc), amount: amount});
+        return amounts;
     }
 
     function test_StartGame() public {
@@ -81,6 +105,7 @@ contract LaneTokenTest is Test {
 
         uint256 gameId = 1;
         (,,,,, uint256 lastSendTime,) = laneToken.getGameRound(gameId);
+        bytes32 foreignKey = keccak256(abi.encode(block.chainid, address(laneToken), gameId));
 
         uint256 timePassed = 300;
         vm.warp(block.timestamp + timePassed);
@@ -89,8 +114,17 @@ contract LaneTokenTest is Test {
             messageId: bytes32(uint256(0x123)),
             sourceChainSelector: MUMBAI_SELECTOR,
             sender: abi.encode(mumbaiPeer),
-            data: abi.encode(gameId, lastSendTime),
-            destTokenAmounts: new Client.EVMTokenAmount[](0)
+            data: _hopData(
+                foreignKey,
+                LOCAL_SELECTOR,
+                address(laneToken),
+                gameId,
+                player,
+                START_AMOUNT,
+                maxHops,
+                lastSendTime
+            ),
+            destTokenAmounts: _tokenAmounts(START_AMOUNT)
         });
 
         vm.expectEmit(true, true, false, false);
@@ -105,9 +139,19 @@ contract LaneTokenTest is Test {
         mockVrfCoordinator.fulfillRandomWords(1, address(laneToken), randomWords);
 
         vm.warp(block.timestamp + timePassed);
-        message.data = abi.encode(gameId, block.timestamp - timePassed);
+        message.data = _hopData(
+            foreignKey,
+            LOCAL_SELECTOR,
+            address(laneToken),
+            gameId,
+            player,
+            START_AMOUNT,
+            maxHops,
+            block.timestamp - timePassed
+        );
         message.sourceChainSelector = FUJI_SELECTOR;
         message.sender = abi.encode(fujiPeer);
+        message.destTokenAmounts = _tokenAmounts(START_AMOUNT);
 
         vm.expectEmit(true, true, false, false);
         emit HopCompleted(gameId, FUJI_SELECTOR, timePassed, 2);
@@ -118,5 +162,85 @@ contract LaneTokenTest is Test {
 
         (,,,,,, bool isActive) = laneToken.getGameRound(gameId);
         assertFalse(isActive);
+    }
+
+    function test_gameIdCollision_reverts() public {
+        uint256 remoteChainId = 137;
+        address remoteToken = makeAddr("remoteToken");
+        uint256 originGameId = 42;
+        bytes32 foreignKey = keccak256(abi.encode(remoteChainId, remoteToken, originGameId));
+        address remoteInitiator = makeAddr("remoteInitiator");
+        address otherInitiator = makeAddr("otherInitiator");
+        uint8 maxHops = 3;
+
+        Client.Any2EVMMessage memory bootstrap = Client.Any2EVMMessage({
+            messageId: bytes32(uint256(0x1)),
+            sourceChainSelector: MUMBAI_SELECTOR,
+            sender: abi.encode(mumbaiPeer),
+            data: _hopData(
+                foreignKey,
+                uint64(remoteChainId),
+                remoteToken,
+                originGameId,
+                remoteInitiator,
+                START_AMOUNT,
+                maxHops,
+                block.timestamp
+            ),
+            destTokenAmounts: _tokenAmounts(START_AMOUNT)
+        });
+
+        vm.prank(address(mockRouter));
+        laneToken.ccipReceive(bootstrap);
+
+        Client.Any2EVMMessage memory collision = Client.Any2EVMMessage({
+            messageId: bytes32(uint256(0x2)),
+            sourceChainSelector: MUMBAI_SELECTOR,
+            sender: abi.encode(mumbaiPeer),
+            data: _hopData(
+                foreignKey,
+                uint64(remoteChainId),
+                remoteToken,
+                originGameId,
+                otherInitiator,
+                START_AMOUNT,
+                maxHops,
+                block.timestamp
+            ),
+            destTokenAmounts: _tokenAmounts(START_AMOUNT)
+        });
+
+        vm.prank(address(mockRouter));
+        vm.expectRevert(LaneToken.GameMismatch.selector);
+        laneToken.ccipReceive(collision);
+    }
+
+    function test_deposit_exactAmountRequired() public {
+        address depositor = makeAddr("depositor");
+        uint256 amount = 5 * 1e6;
+        mockUsdc.mint(depositor, amount);
+
+        vm.startPrank(depositor);
+        mockUsdc.approve(address(laneToken), amount);
+        laneToken.deposit(amount);
+        vm.stopPrank();
+
+        assertEq(laneToken.s_balances(depositor), amount);
+        assertEq(mockUsdc.balanceOf(address(laneToken)), START_AMOUNT + amount);
+    }
+
+    function test_constructor_revertsEmptySupportedChains() public {
+        uint256[] memory empty = new uint256[](0);
+        vm.expectRevert("no supported chains");
+        new LaneToken(
+            address(mockRouter),
+            address(mockUsdc),
+            address(mockVrfCoordinator),
+            1,
+            bytes32(0),
+            block.chainid,
+            LOCAL_SELECTOR,
+            empty
+        );
     }
 }

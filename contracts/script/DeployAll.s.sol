@@ -77,6 +77,7 @@ contract DeployAll is Script {
         executor.setLaneController(result.laneController);
         executor.setCreForwarder(creForwarder);
         executor.setHopSender(creForwarder, true);
+        _wireHomeConfig(cfg, result.laneController, result.laneExecutor);
         controller.setHopRecorder(result.laneExecutor, true);
         controller.setCreForwarder(creForwarder);
 
@@ -99,6 +100,8 @@ contract DeployAll is Script {
             cfg.vrfCoordinator,
             vrfSubId,
             cfg.vrfKeyHash,
+            cfg.chainId,
+            cfg.chainSelector,
             supportedChains
         );
 
@@ -131,6 +134,7 @@ contract DeployAll is Script {
         executor.setLaneController(controller);
         executor.setCreForwarder(creForwarder);
         executor.setHopSender(creForwarder, true);
+        _wireHomeConfig(cfg, controller, address(executor));
         LaneController(controller).setHopRecorder(address(executor), true);
 
         console2.log("LaneExecutor deployed:", address(executor));
@@ -210,6 +214,23 @@ contract DeployAll is Script {
             return vm.envOr("REMOTE_LANE_TOKEN_BASE_SEPOLIA", address(0));
         }
         return address(0);
+    }
+
+    function _wireHomeConfig(
+        ChainConfig.NetworkConfig memory cfg,
+        address controller,
+        address executorAddr
+    ) internal {
+        uint64 homeSelector = uint64(vm.envOr("HOME_CHAIN_SELECTOR", uint256(ChainConfig.SEPOLIA_SELECTOR)));
+        address canonicalController = vm.envOr("CANONICAL_CONTROLLER", controller);
+        address homeExecutor = vm.envOr("HOME_EXECUTOR", executorAddr);
+
+        LaneExecutor(payable(executorAddr)).setHomeConfig(
+            cfg.chainSelector, homeSelector, canonicalController, homeExecutor
+        );
+        console2.log("Home chain selector:", homeSelector);
+        console2.log("Canonical controller:", canonicalController);
+        console2.log("Home executor:", homeExecutor);
     }
 
     function _logSummary(string memory chainName, DeploymentResult memory result) internal view {

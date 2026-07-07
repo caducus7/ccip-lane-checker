@@ -29,7 +29,7 @@ contract MockERC20 is IERC20 {
         return true;
     }
 
-    function transfer(address to, uint256 amount) external returns (bool) {
+    function transfer(address to, uint256 amount) external virtual returns (bool) {
         require(balanceOf[msg.sender] >= amount, "Insufficient");
         balanceOf[msg.sender] -= amount;
         balanceOf[to] += amount;
@@ -37,7 +37,7 @@ contract MockERC20 is IERC20 {
         return true;
     }
 
-    function transferFrom(address from, address to, uint256 amount) external returns (bool) {
+    function transferFrom(address from, address to, uint256 amount) external virtual returns (bool) {
         require(balanceOf[from] >= amount, "Insufficient");
         require(allowance[from][msg.sender] >= amount, "Not allowed");
         allowance[from][msg.sender] -= amount;

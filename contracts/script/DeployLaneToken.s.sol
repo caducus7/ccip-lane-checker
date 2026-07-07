@@ -28,6 +28,8 @@ contract DeployLaneToken is Script {
             cfg.vrfCoordinator,
             vrfSubId,
             cfg.vrfKeyHash,
+            cfg.chainId,
+            cfg.chainSelector,
             supportedChains
         );
         vm.stopBroadcast();

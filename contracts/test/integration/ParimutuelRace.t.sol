@@ -42,6 +42,7 @@ contract ParimutuelRaceTest is Test {
         executor = new LaneExecutor(address(sourceRouter), address(this));
 
         executor.setLaneController(address(controller));
+        executor.setHomeConfig(localSelector, localSelector, address(controller), address(executor));
         controller.setHopRecorder(address(executor), true);
         // Single local router: every "remote" executor is this executor.
         executor.setRemoteExecutor(localSelector, address(executor));

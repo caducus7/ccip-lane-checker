@@ -147,6 +147,7 @@ contract LaneControllerTest is Test {
         vm.prank(cre);
         controller.startRace(roundId);
         _finishLane(roundId, 0);
+        _finishLane(roundId, 1);
         vm.prank(cre);
         controller.distributePrizes(roundId);
 
@@ -163,23 +164,25 @@ contract LaneControllerTest is Test {
         controller.claimPrize(roundId);
     }
 
-    function test_distributePrizes_noWinnerLaneBets_sweepsToPlatform() public {
+    function test_distributePrizes_emptyWinnerLane_redirectsToBettors() public {
         uint256 roundId = _createRound();
 
-        // All bets on lane 1, but lane 0 wins and no runner-up finishes.
         vm.prank(player);
         controller.buyLaneTokens(roundId, 1, 200e6);
 
         vm.prank(cre);
         controller.startRace(roundId);
         _finishLane(roundId, 0);
+        _finishLane(roundId, 1);
         vm.prank(cre);
         controller.distributePrizes(roundId);
 
         PrizeCalculator.Payout memory p = PrizeCalculator.calculate(200e6);
-        // Winner share (no winner-lane bettors) and runner-up share (no runner-up) sweep to platform.
-        assertEq(token.balanceOf(treasury), p.platform + p.winner + p.runnerUp);
+        assertEq(token.balanceOf(treasury), p.platform);
         assertEq(token.balanceOf(gasReserve), p.gasReserve);
+
+        vm.prank(player);
+        assertEq(controller.claimPrize(roundId), p.winner + p.runnerUp);
     }
 
     // ---------------------------------------------------------------- access control
@@ -254,11 +257,11 @@ contract LaneControllerTest is Test {
 
         _finishLane(roundId, 0);
 
-        // Finished lane cannot record more hops.
-        vm.prank(executor);
-        vm.expectRevert(LaneController.InvalidState.selector);
-        controller.recordHop(roundId, 0, SEPOLIA, _sendTime(10));
+        vm.prank(cre);
+        vm.expectRevert(LaneController.RunnerUpPending.selector);
+        controller.distributePrizes(roundId);
 
+        _finishLane(roundId, 1);
         vm.prank(cre);
         controller.distributePrizes(roundId);
 
@@ -422,7 +425,7 @@ contract LaneControllerTest is Test {
 
         vm.prank(executor);
         vm.expectRevert(LaneController.InvalidSendTime.selector);
-        controller.recordHop(roundId, 0, SEPOLIA, block.timestamp + 1);
+        controller.recordHop(roundId, 0, SEPOLIA, block.timestamp + 16 minutes);
     }
 
     function test_recordHop_wrongChainForHopIndex_reverts() public {
@@ -451,6 +454,7 @@ contract LaneControllerTest is Test {
         vm.prank(cre);
         controller.startRace(roundId);
         _finishLane(roundId, 0);
+        _finishLane(roundId, 1);
         vm.prank(cre);
         controller.distributePrizes(roundId);
 
@@ -526,6 +530,70 @@ contract LaneControllerTest is Test {
         assertEq(_createRound(), 2);
     }
 
+    function test_distributePrizes_runnerUpPending_untilAllLanesFinish() public {
+        uint256 roundId = _createRound();
+        vm.prank(player);
+        controller.buyLaneTokens(roundId, 0, 100e6);
+
+        vm.prank(cre);
+        controller.startRace(roundId);
+        _finishLane(roundId, 0);
+
+        vm.prank(cre);
+        vm.expectRevert(LaneController.RunnerUpPending.selector);
+        controller.distributePrizes(roundId);
+    }
+
+    function test_sweepUnclaimed_claimWindowBlocksEarlySweep() public {
+        uint256 roundId = _createRound();
+        vm.prank(player);
+        controller.buyLaneTokens(roundId, 0, 100e6);
+
+        vm.prank(cre);
+        controller.startRace(roundId);
+        _finishLane(roundId, 0);
+        _finishLane(roundId, 1);
+        vm.prank(cre);
+        controller.distributePrizes(roundId);
+
+        vm.prank(cre);
+        vm.expectRevert(LaneController.ClaimWindowActive.selector);
+        controller.sweepUnclaimed(roundId);
+    }
+
+    function test_partialClaim_sweep_thenLateClaim_noDoublePay() public {
+        uint256 roundId = _createRound();
+        vm.prank(player);
+        controller.buyLaneTokens(roundId, 0, 100e6);
+        vm.prank(rival);
+        controller.buyLaneTokens(roundId, 0, 300e6);
+
+        vm.prank(cre);
+        controller.startRace(roundId);
+        _finishLane(roundId, 0);
+        _finishLane(roundId, 1);
+        vm.prank(cre);
+        controller.distributePrizes(roundId);
+
+        PrizeCalculator.Payout memory p = PrizeCalculator.calculate(400e6);
+        uint256 treasuryBefore = token.balanceOf(treasury);
+
+        vm.prank(player);
+        uint256 claimedWinner = controller.claimPrize(roundId);
+        assertEq(claimedWinner, p.winner / 4);
+
+        vm.warp(block.timestamp + controller.claimWindow() + 1);
+        vm.prank(cre);
+        controller.sweepUnclaimed(roundId);
+
+        uint256 expectedSweep = p.winner - claimedWinner;
+        assertEq(token.balanceOf(treasury), treasuryBefore + expectedSweep);
+
+        vm.prank(rival);
+        vm.expectRevert(LaneController.ClaimsSwept.selector);
+        controller.claimPrize(roundId);
+    }
+
     function test_sweepUnclaimed_afterSettlement() public {
         uint256 roundId = _createRound();
         vm.prank(player);
@@ -543,9 +611,42 @@ contract LaneControllerTest is Test {
         PrizeCalculator.Payout memory p = PrizeCalculator.calculate(400e6);
         uint256 treasuryBefore = token.balanceOf(treasury);
 
+        vm.warp(block.timestamp + controller.claimWindow() + 1);
         vm.prank(cre);
         controller.sweepUnclaimed(roundId);
 
         assertEq(token.balanceOf(treasury), treasuryBefore + p.winner + p.runnerUp);
+
+        vm.prank(player);
+        vm.expectRevert(LaneController.ClaimsSwept.selector);
+        controller.claimPrize(roundId);
+    }
+
+    function test_sweepThenClaim_cappedByRemainingShare() public {
+        uint256 roundId = _createRound();
+        vm.prank(player);
+        controller.buyLaneTokens(roundId, 0, 100e6);
+        vm.prank(rival);
+        controller.buyLaneTokens(roundId, 0, 300e6);
+        vm.prank(rival);
+        controller.buyLaneTokens(roundId, 1, 300e6);
+
+        vm.prank(cre);
+        controller.startRace(roundId);
+        _finishLane(roundId, 0);
+        _finishLane(roundId, 1);
+        vm.prank(cre);
+        controller.distributePrizes(roundId);
+
+        vm.prank(player);
+        controller.claimPrize(roundId);
+
+        vm.warp(block.timestamp + controller.claimWindow() + 1);
+        vm.prank(cre);
+        controller.sweepUnclaimed(roundId);
+
+        vm.prank(rival);
+        vm.expectRevert(LaneController.ClaimsSwept.selector);
+        controller.claimPrize(roundId);
     }
 }
