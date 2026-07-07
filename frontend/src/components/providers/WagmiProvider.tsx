@@ -3,15 +3,16 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { WagmiProvider, createConfig, http } from "wagmi";
 import { injected } from "wagmi/connectors";
-import { arbitrumSepolia, sepolia } from "viem/chains";
 import { type ReactNode, useState } from "react";
+import { SUPPORTED_CHAINS } from "@/lib/chains";
 
 const config = createConfig({
-  chains: [sepolia, arbitrumSepolia],
+  chains: [...SUPPORTED_CHAINS],
   connectors: [injected()],
   transports: {
-    [sepolia.id]: http(),
-    [arbitrumSepolia.id]: http(),
+    [SUPPORTED_CHAINS[0].id]: http(),
+    [SUPPORTED_CHAINS[1].id]: http(),
+    [SUPPORTED_CHAINS[2].id]: http(),
   },
   ssr: true,
 });

@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { formatEther } from "viem";
-import { arbitrumSepolia, sepolia } from "viem/chains";
 import {
   useGameCounter,
   useLaneTokenActions,
@@ -10,14 +9,16 @@ import {
 } from "@/hooks/useLaneToken";
 import { HopProgress } from "@/components/solo/HopProgress";
 import type { SupportedChainId } from "@/lib/chains";
-import { CHAIN_LABELS } from "@/lib/chains";
+import { CHAIN_LABELS, SUPPORTED_CHAINS } from "@/lib/chains";
 import { DeploymentBanner } from "@/components/ui/EmptyState";
 import { TxFeedback } from "@/components/ui/TxFeedback";
 
 export function SoloGamePanel() {
   const [amount, setAmount] = useState("0.01");
   const [maxHops, setMaxHops] = useState(5);
-  const [destChain, setDestChain] = useState<SupportedChainId>(arbitrumSepolia.id);
+  const [destChain, setDestChain] = useState<SupportedChainId>(
+    SUPPORTED_CHAINS[1].id
+  );
   const [activeGameId, setActiveGameId] = useState<bigint | undefined>();
 
   const { data: balance } = useLaneTokenBalance();
@@ -133,10 +134,11 @@ export function SoloGamePanel() {
             disabled={!isDeployed}
             className="mt-1 w-full border border-grid bg-asphalt px-3 py-2.5 font-mono text-sm text-white focus:border-neon-cyan outline-none disabled:opacity-40"
           >
-            <option value={sepolia.id}>{CHAIN_LABELS[sepolia.id]}</option>
-            <option value={arbitrumSepolia.id}>
-              {CHAIN_LABELS[arbitrumSepolia.id]}
-            </option>
+            {SUPPORTED_CHAINS.map((chain) => (
+              <option key={chain.id} value={chain.id}>
+                {CHAIN_LABELS[chain.id as SupportedChainId]}
+              </option>
+            ))}
           </select>
         </label>
 

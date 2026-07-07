@@ -1,6 +1,7 @@
 import { selectorToChainId, CHAIN_SHORT, type SupportedChainId } from "./chains";
 
 const CCIP_EXPLORER_BASE = "https://ccip.chain.link";
+const CCIP_API_BASE = "https://api.ccip.chain.link/v2";
 
 export function normalizeMessageId(messageId: string): string {
   return messageId.startsWith("0x") ? messageId : `0x${messageId}`;
@@ -66,13 +67,57 @@ export interface CcipMessageStatus {
   latencyMs?: number;
 }
 
-/** Placeholder until CCIP API / CRE benchmark cache is wired (Step 6) */
+interface CcipApiMessage {
+  messageId?: string;
+  status?: string;
+  metadata?: { status?: string };
+  sourceChain?: { name?: string };
+  destChain?: { name?: string };
+}
+
+function mapApiStatus(raw?: string): MessageStatus {
+  if (!raw) return "unknown";
+  const upper = raw.toUpperCase();
+  if (upper.includes("SUCCESS") || upper === "EXECUTED") return "success";
+  if (upper.includes("FAIL")) return "failure";
+  if (
+    upper.includes("PEND") ||
+    upper === "SENT" ||
+    upper === "IN_FLIGHT" ||
+    upper === "ROUTED"
+  ) {
+    return "pending";
+  }
+  return "unknown";
+}
+
+/** Poll CCIP Tools API for message lifecycle status. */
 export async function fetchMessageStatus(
   messageId: string
 ): Promise<CcipMessageStatus> {
-  await new Promise((r) => setTimeout(r, 300));
-  return {
-    messageId,
-    status: "pending",
-  };
+  const normalized = normalizeMessageId(messageId);
+
+  try {
+    const res = await fetch(`${CCIP_API_BASE}/messages/${normalized}`, {
+      headers: { Accept: "application/json" },
+    });
+
+    if (res.status === 404) {
+      return { messageId: normalized, status: "pending" };
+    }
+
+    if (!res.ok) {
+      return { messageId: normalized, status: "unknown" };
+    }
+
+    const data = (await res.json()) as CcipApiMessage;
+    return {
+      messageId: normalized,
+      status: mapApiStatus(data.metadata?.status ?? data.status),
+      sourceChain: data.sourceChain?.name,
+      destChain: data.destChain?.name,
+    };
+  } catch {
+    return { messageId: normalized, status: "pending" };
+  }
 }
