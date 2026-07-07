@@ -30,6 +30,8 @@ contract ParimutuelRaceTest is Test {
     IRouterClient public sourceRouter;
 
     function setUp() public {
+        // Realistic timestamp so the round-creation cooldown window is in the past.
+        vm.warp(1_000_000);
         simulator = new CCIPLocalSimulator();
         (uint64 chainSelector, IRouterClient router,,,,,) = simulator.configuration();
         localSelector = chainSelector;

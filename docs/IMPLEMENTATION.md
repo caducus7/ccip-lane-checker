@@ -72,7 +72,7 @@ Start-to-finished-product plan. Each step is independently shippable.
 
 ### Workflow B: `hop-monitor` (EVM Log)
 - [x] Trigger: `HopCompleted`, `LaneFinished` events on all deployed chains
-- [x] Action: Update round state; if first finisher → `declareWinner()`
+- [x] Action: Track hops; winner declared on-chain by `recordHop` (no CRE `declareWinner` fallback)
 
 ### Workflow C: `lane-benchmark` (CRON + HTTP)
 - [x] Trigger: every 5 min
@@ -81,7 +81,7 @@ Start-to-finished-product plan. Each step is independently shippable.
 
 ### Workflow D: `settlement` (EVM Log)
 - [x] Trigger: `WinnerDeclared` event
-- [x] Action: EVM write `distributePrizes()`
+- [x] Action: EVM write `distributePrizes()` + `sweepUnclaimed()`
 
 ### Workflow E: `hop-sender` (CRON + EVM Log)
 - [x] Trigger: CRON initial hops + `HopReceived` continuation

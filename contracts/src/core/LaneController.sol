@@ -5,7 +5,6 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {LaneControllerPausable} from "../security/Pausable.sol";
 import {PrizeCalculator} from "../libraries/PrizeCalculator.sol";
-import {LaneUtils} from "../libraries/LaneUtils.sol";
 import {ILaneController} from "../interfaces/ILaneController.sol";
 import {IReceiver} from "../interfaces/IReceiver.sol";
 import {CreReportAuth} from "../libraries/CreReportAuth.sol";
@@ -31,21 +30,24 @@ contract LaneController is LaneControllerPausable, ILaneController, IReceiver {
 
     struct Lane {
         uint64[] chainPath;
+        // hopsCompleted / requiredHops / finished share one slot.
         uint8 hopsCompleted;
         uint8 requiredHops;
+        bool finished;
         uint256 totalLatency;
         uint256 finishTime;
-        bool finished;
     }
 
     struct Round {
+        // All sub-word fields share one slot: created, declared and settled each
+        // touch a single storage word instead of two.
         RoundState state;
         uint8 laneCount;
-        uint256 totalPrizePool;
         uint8 winningLaneId;
         uint8 runnerUpLaneId;
         bool winnerDeclared;
         bool prizesDistributed;
+        uint256 totalPrizePool;
         uint256 winnerShare;
         uint256 runnerUpShare;
         uint256 winnerShareClaimed;
@@ -64,6 +66,11 @@ contract LaneController is LaneControllerPausable, ILaneController, IReceiver {
     mapping(uint256 => Round) private s_rounds;
     mapping(address => bool) public hopRecorders;
 
+    // Packed into one slot: rate-limit bookkeeping and the CRE re-entry flag.
+    /// @notice Minimum seconds between `createRound` calls (0 disables the guard).
+    uint48 public roundCooldown;
+    /// @notice Timestamp of the last successful `createRound`.
+    uint48 public lastRoundCreatedAt;
     bool private _creReportActive;
 
     event RoundCreated(uint256 indexed roundId, uint8 laneCount);
@@ -92,11 +99,15 @@ contract LaneController is LaneControllerPausable, ILaneController, IReceiver {
     error InvalidSendTime();
     error InvalidChainSelector();
     error ZeroAddress();
+    error RoundCooldownActive(uint256 availableAt);
 
     uint256 internal constant MAX_HOP_LATENCY = 30 days;
     uint256 public constant MAX_HOPS = 16;
+    /// @dev Anti-spam floor between rounds; owner-tunable via `setRoundCooldown`.
+    uint48 public constant DEFAULT_ROUND_COOLDOWN = 60 seconds;
 
     event UnclaimedSwept(uint256 indexed roundId, uint256 amount);
+    event RoundCooldownUpdated(uint48 cooldown);
 
     modifier onlyRound(uint256 roundId) {
         if (roundId == 0 || roundId > currentRoundId) revert InvalidRound();
@@ -125,6 +136,13 @@ contract LaneController is LaneControllerPausable, ILaneController, IReceiver {
         platformTreasury = _platformTreasury;
         gasReserve = _gasReserve;
         creForwarder = _creForwarder;
+        roundCooldown = DEFAULT_ROUND_COOLDOWN;
+    }
+
+    /// @notice Sets the minimum interval between round creations. Zero disables the guard.
+    function setRoundCooldown(uint48 cooldown) external onlyOwner {
+        roundCooldown = cooldown;
+        emit RoundCooldownUpdated(cooldown);
     }
 
     function setCreForwarder(address forwarder) external onlyOwner {
@@ -149,21 +167,31 @@ contract LaneController is LaneControllerPausable, ILaneController, IReceiver {
     function createRound(uint64[][] calldata lanePaths) external onlyCreOrOwner whenNotPaused returns (uint256 roundId) {
         require(lanePaths.length > 1 && lanePaths.length < type(uint8).max, "bad lane count");
 
+        // Rate limit: bounds round spam from a compromised CRE forwarder or owner key.
+        uint256 availableAt = uint256(lastRoundCreatedAt) + roundCooldown;
+        if (block.timestamp < availableAt) revert RoundCooldownActive(availableAt);
+        lastRoundCreatedAt = uint48(block.timestamp);
+
+        uint8 laneCount = uint8(lanePaths.length);
         roundId = ++currentRoundId;
         Round storage round = s_rounds[roundId];
         round.state = RoundState.Betting;
-        round.laneCount = uint8(lanePaths.length);
+        round.laneCount = laneCount;
         round.winningLaneId = NO_LANE;
         round.runnerUpLaneId = NO_LANE;
 
-        for (uint8 i = 0; i < round.laneCount; i++) {
-            require(lanePaths[i].length > 0, "empty path");
-            require(lanePaths[i].length <= MAX_HOPS, "path too long");
-            round.lanes[i].chainPath = lanePaths[i];
-            round.lanes[i].requiredHops = LaneUtils.requiredHops(lanePaths[i]);
+        for (uint8 i = 0; i < laneCount; i++) {
+            uint64[] calldata path = lanePaths[i];
+            require(path.length > 0, "empty path");
+            require(path.length <= MAX_HOPS, "path too long");
+            Lane storage lane = round.lanes[i];
+            lane.chainPath = path;
+            // Equivalent to LaneUtils.requiredHops without the calldata->memory copy;
+            // length is bounded to (0, MAX_HOPS] above so the uint8 cast is safe.
+            lane.requiredHops = uint8(path.length);
         }
 
-        emit RoundCreated(roundId, round.laneCount);
+        emit RoundCreated(roundId, laneCount);
     }
 
     function buyLaneTokens(uint256 roundId, uint8 laneId, uint256 amount)
@@ -210,16 +238,19 @@ contract LaneController is LaneControllerPausable, ILaneController, IReceiver {
 
         Lane storage lane = round.lanes[laneId];
         if (lane.finished) revert InvalidState();
+        uint8 hopsCompleted = lane.hopsCompleted;
         // Hop N of a lane must land on the N-th chain of its configured path; a hop
         // recorder cannot credit progress with a selector outside the lane circuit.
-        if (chainSelector != lane.chainPath[lane.hopsCompleted]) revert InvalidChainSelector();
+        if (chainSelector != lane.chainPath[hopsCompleted]) revert InvalidChainSelector();
 
-        lane.hopsCompleted++;
+        // hopsCompleted < requiredHops <= MAX_HOPS, so the increment cannot overflow.
+        hopsCompleted++;
+        lane.hopsCompleted = hopsCompleted;
         lane.totalLatency += latency;
 
-        emit HopCompleted(roundId, laneId, chainSelector, latency, lane.hopsCompleted);
+        emit HopCompleted(roundId, laneId, chainSelector, latency, hopsCompleted);
 
-        if (lane.hopsCompleted >= lane.requiredHops) {
+        if (hopsCompleted >= lane.requiredHops) {
             lane.finished = true;
             lane.finishTime = block.timestamp;
             emit LaneFinished(roundId, laneId, lane.finishTime);
@@ -259,17 +290,21 @@ contract LaneController is LaneControllerPausable, ILaneController, IReceiver {
 
         PrizeCalculator.Payout memory payout = PrizeCalculator.calculate(round.totalPrizePool);
 
+        uint8 winningLaneId = round.winningLaneId;
+        uint8 runnerUpLaneId = round.runnerUpLaneId;
         uint256 platformAmount = payout.platform;
+        uint256 winnerShare;
 
         // Winner/runner-up shares stay in the contract for pull-based claims.
         // Shares with no eligible bettors fall through to the platform treasury.
-        if (round.lanePool[round.winningLaneId] > 0) {
-            round.winnerShare = payout.winner;
+        if (round.lanePool[winningLaneId] > 0) {
+            winnerShare = payout.winner;
+            round.winnerShare = winnerShare;
         } else {
             platformAmount += payout.winner;
         }
 
-        if (round.runnerUpLaneId != NO_LANE && round.lanePool[round.runnerUpLaneId] > 0) {
+        if (runnerUpLaneId != NO_LANE && round.lanePool[runnerUpLaneId] > 0) {
             round.runnerUpShare = payout.runnerUp;
         } else {
             platformAmount += payout.runnerUp;
@@ -278,7 +313,7 @@ contract LaneController is LaneControllerPausable, ILaneController, IReceiver {
         if (platformAmount > 0) bettingToken.safeTransfer(platformTreasury, platformAmount);
         if (payout.gasReserve > 0) bettingToken.safeTransfer(gasReserve, payout.gasReserve);
 
-        emit PrizesDistributed(roundId, round.winningLaneId, round.winnerShare);
+        emit PrizesDistributed(roundId, winningLaneId, winnerShare);
     }
 
     /// @notice Claim a bettor's pro-rata share of the winner and/or runner-up pools.
@@ -288,9 +323,10 @@ contract LaneController is LaneControllerPausable, ILaneController, IReceiver {
         Round storage round = s_rounds[roundId];
         if (!round.prizesDistributed) revert NotSettled();
 
-        amount = _consumeClaim(round, round.winningLaneId, round.winnerShare);
-        if (round.runnerUpLaneId != NO_LANE) {
-            amount += _consumeClaim(round, round.runnerUpLaneId, round.runnerUpShare);
+        amount = _consumeClaim(round, round.winningLaneId, round.winnerShare, true);
+        uint8 runnerUpLaneId = round.runnerUpLaneId;
+        if (runnerUpLaneId != NO_LANE) {
+            amount += _consumeClaim(round, runnerUpLaneId, round.runnerUpShare, false);
         }
         if (amount == 0) revert NothingToClaim();
 
@@ -298,14 +334,17 @@ contract LaneController is LaneControllerPausable, ILaneController, IReceiver {
         emit PrizeClaimed(roundId, msg.sender, amount);
     }
 
-    function _consumeClaim(Round storage round, uint8 laneId, uint256 share) internal returns (uint256 amount) {
+    function _consumeClaim(Round storage round, uint8 laneId, uint256 share, bool isWinnerShare)
+        internal
+        returns (uint256 amount)
+    {
         uint256 bet = round.bets[laneId][msg.sender];
         if (bet == 0 || share == 0) return 0;
         round.bets[laneId][msg.sender] = 0;
         amount = (share * bet) / round.lanePool[laneId];
-        if (laneId == round.winningLaneId) {
+        if (isWinnerShare) {
             round.winnerShareClaimed += amount;
-        } else if (laneId == round.runnerUpLaneId) {
+        } else {
             round.runnerUpShareClaimed += amount;
         }
     }
@@ -315,12 +354,14 @@ contract LaneController is LaneControllerPausable, ILaneController, IReceiver {
         Round storage round = s_rounds[roundId];
         if (!round.prizesDistributed) revert NotSettled();
 
-        uint256 unclaimed = (round.winnerShare - round.winnerShareClaimed)
-            + (round.runnerUpShare - round.runnerUpShareClaimed);
+        uint256 winnerShare = round.winnerShare;
+        uint256 runnerUpShare = round.runnerUpShare;
+        uint256 unclaimed =
+            (winnerShare - round.winnerShareClaimed) + (runnerUpShare - round.runnerUpShareClaimed);
         if (unclaimed == 0) revert NothingToClaim();
 
-        round.winnerShareClaimed = round.winnerShare;
-        round.runnerUpShareClaimed = round.runnerUpShare;
+        round.winnerShareClaimed = winnerShare;
+        round.runnerUpShareClaimed = runnerUpShare;
         bettingToken.safeTransfer(platformTreasury, unclaimed);
         emit UnclaimedSwept(roundId, unclaimed);
     }

@@ -29,6 +29,7 @@ contract LaneControllerTest is Test {
     event LaneFinished(uint256 indexed roundId, uint8 indexed laneId, uint256 finishTime);
     event WinnerDeclared(uint256 indexed roundId, uint8 indexed laneId, uint256 finishTime);
     event PrizesDistributed(uint256 indexed roundId, uint8 winnerLaneId, uint256 winnerPayout);
+    event RoundCooldownUpdated(uint48 cooldown);
 
     function setUp() public {
         vm.warp(1_000_000);
@@ -396,6 +397,8 @@ contract LaneControllerTest is Test {
 
     function test_onReport_respectsPause() public {
         uint256 roundId = _createRound();
+        // Step past the round-creation cooldown so only the pause gates the report.
+        vm.warp(block.timestamp + controller.roundCooldown());
         controller.pause();
 
         uint64[][] memory paths = _twoLanePaths();
@@ -456,6 +459,71 @@ contract LaneControllerTest is Test {
         PrizeCalculator.Payout memory p = PrizeCalculator.calculate(100e6);
         vm.prank(player);
         assertEq(controller.claimPrize(roundId), p.winner);
+    }
+
+    // ---------------------------------------------------------------- rate limiting
+
+    function test_roundCooldown_blocksBackToBackCreation() public {
+        assertEq(controller.roundCooldown(), controller.DEFAULT_ROUND_COOLDOWN());
+
+        uint256 createdAt = block.timestamp;
+        _createRound();
+        assertEq(controller.lastRoundCreatedAt(), createdAt);
+
+        uint256 availableAt = createdAt + controller.roundCooldown();
+        vm.prank(cre);
+        vm.expectRevert(abi.encodeWithSelector(LaneController.RoundCooldownActive.selector, availableAt));
+        controller.createRound(_twoLanePaths());
+
+        // Still blocked one second before expiry, allowed at expiry.
+        vm.warp(availableAt - 1);
+        vm.prank(cre);
+        vm.expectRevert(abi.encodeWithSelector(LaneController.RoundCooldownActive.selector, availableAt));
+        controller.createRound(_twoLanePaths());
+
+        vm.warp(availableAt);
+        assertEq(_createRound(), 2);
+    }
+
+    function test_roundCooldown_appliesToOwnerToo() public {
+        uint256 availableAt = block.timestamp + controller.roundCooldown();
+        _createRound();
+
+        vm.expectRevert(abi.encodeWithSelector(LaneController.RoundCooldownActive.selector, availableAt));
+        controller.createRound(_twoLanePaths());
+    }
+
+    function test_roundCooldown_blocksCreateRoundViaReport() public {
+        _createRound();
+
+        bytes memory report = abi.encodeWithSelector(LaneController.createRound.selector, _twoLanePaths());
+        vm.prank(cre);
+        vm.expectRevert(LaneController.ReportExecutionFailed.selector);
+        controller.onReport("", report);
+    }
+
+    function test_setRoundCooldown_ownerConfigurable() public {
+        vm.prank(player);
+        vm.expectRevert();
+        controller.setRoundCooldown(120);
+
+        vm.expectEmit(false, false, false, true);
+        emit RoundCooldownUpdated(120);
+        controller.setRoundCooldown(120);
+        assertEq(controller.roundCooldown(), 120);
+
+        uint256 availableAt = block.timestamp + 120;
+        _createRound();
+        vm.warp(availableAt - 1);
+        vm.prank(cre);
+        vm.expectRevert(abi.encodeWithSelector(LaneController.RoundCooldownActive.selector, availableAt));
+        controller.createRound(_twoLanePaths());
+    }
+
+    function test_setRoundCooldown_zeroDisablesGuard() public {
+        controller.setRoundCooldown(0);
+        assertEq(_createRound(), 1);
+        assertEq(_createRound(), 2);
     }
 
     function test_sweepUnclaimed_afterSettlement() public {

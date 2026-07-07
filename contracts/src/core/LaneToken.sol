@@ -17,13 +17,14 @@ contract LaneToken is CCIPReceiver, VRFConsumerBaseV2Plus {
     using SafeERC20 for IERC20;
 
     struct GameRound {
+        // initiator / hopCount / maxHops / isActive share one slot.
         address initiator;
         uint8 hopCount;
         uint8 maxHops;
+        bool isActive;
         uint256 totalLatency;
         uint256 lastSendTime;
         uint256 amount;
-        bool isActive;
     }
 
     IERC20 public immutable i_underlyingToken;
@@ -117,17 +118,16 @@ contract LaneToken is CCIPReceiver, VRFConsumerBaseV2Plus {
         require(s_balances[msg.sender] >= amount, "Insufficient balance");
         s_balances[msg.sender] -= amount;
 
-        s_gameCounter++;
-        uint256 gameId = s_gameCounter;
+        uint256 gameId = ++s_gameCounter;
 
         s_gameRounds[gameId] = GameRound({
             initiator: msg.sender,
             hopCount: 0,
             maxHops: maxHops,
+            isActive: true,
             totalLatency: 0,
             lastSendTime: block.timestamp,
-            amount: amount,
-            isActive: true
+            amount: amount
         });
 
         bytes memory messageData = abi.encode(gameId, block.timestamp);
@@ -151,11 +151,12 @@ contract LaneToken is CCIPReceiver, VRFConsumerBaseV2Plus {
 
         uint256 latency = block.timestamp - sendTime;
         round.totalLatency += latency;
-        round.hopCount++;
+        uint8 hopCount = round.hopCount + 1;
+        round.hopCount = hopCount;
 
-        emit HopCompleted(gameId, message.sourceChainSelector, latency, round.hopCount);
+        emit HopCompleted(gameId, message.sourceChainSelector, latency, hopCount);
 
-        if (round.hopCount >= round.maxHops) {
+        if (hopCount >= round.maxHops) {
             round.isActive = false;
             s_balances[round.initiator] += round.amount;
             emit GameFinished(gameId, round.totalLatency, round.hopCount);

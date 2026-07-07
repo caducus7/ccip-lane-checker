@@ -111,7 +111,8 @@ contract LaneExecutor is CCIPReceiver, Ownable, ILaneExecutor, IReceiver {
     }
 
     function _ccipReceive(Client.Any2EVMMessage memory message) internal override {
-        if (address(s_laneController) == address(0)) revert ControllerNotSet();
+        ILaneController controller = s_laneController;
+        if (address(controller) == address(0)) revert ControllerNotSet();
 
         address expectedSender = remoteExecutors[message.sourceChainSelector];
         if (expectedSender == address(0)) revert UnknownSource(message.sourceChainSelector);
@@ -126,7 +127,7 @@ contract LaneExecutor is CCIPReceiver, Ownable, ILaneExecutor, IReceiver {
         uint256 latency = block.timestamp - sendTime;
 
         emit HopReceived(roundId, laneId, message.sourceChainSelector, latency);
-        s_laneController.recordHop(roundId, laneId, hopChainSelector, sendTime);
+        controller.recordHop(roundId, laneId, hopChainSelector, sendTime);
     }
 
     error InvalidSendTime();
