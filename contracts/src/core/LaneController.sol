@@ -90,8 +90,11 @@ contract LaneController is LaneControllerPausable, ILaneController, IReceiver {
     error NothingToClaim();
     error ReportExecutionFailed();
     error InvalidSendTime();
+    error InvalidChainSelector();
+    error ZeroAddress();
 
     uint256 internal constant MAX_HOP_LATENCY = 30 days;
+    uint256 public constant MAX_HOPS = 16;
 
     event UnclaimedSwept(uint256 indexed roundId, uint256 amount);
 
@@ -114,6 +117,10 @@ contract LaneController is LaneControllerPausable, ILaneController, IReceiver {
         address _gasReserve,
         address _creForwarder
     ) LaneControllerPausable(initialOwner) {
+        if (
+            _bettingToken == address(0) || _platformTreasury == address(0) || _gasReserve == address(0)
+                || _creForwarder == address(0)
+        ) revert ZeroAddress();
         bettingToken = IERC20(_bettingToken);
         platformTreasury = _platformTreasury;
         gasReserve = _gasReserve;
@@ -121,6 +128,7 @@ contract LaneController is LaneControllerPausable, ILaneController, IReceiver {
     }
 
     function setCreForwarder(address forwarder) external onlyOwner {
+        if (forwarder == address(0)) revert ZeroAddress();
         creForwarder = forwarder;
     }
 
@@ -150,6 +158,7 @@ contract LaneController is LaneControllerPausable, ILaneController, IReceiver {
 
         for (uint8 i = 0; i < round.laneCount; i++) {
             require(lanePaths[i].length > 0, "empty path");
+            require(lanePaths[i].length <= MAX_HOPS, "path too long");
             round.lanes[i].chainPath = lanePaths[i];
             round.lanes[i].requiredHops = LaneUtils.requiredHops(lanePaths[i]);
         }
@@ -201,6 +210,9 @@ contract LaneController is LaneControllerPausable, ILaneController, IReceiver {
 
         Lane storage lane = round.lanes[laneId];
         if (lane.finished) revert InvalidState();
+        // Hop N of a lane must land on the N-th chain of its configured path; a hop
+        // recorder cannot credit progress with a selector outside the lane circuit.
+        if (chainSelector != lane.chainPath[lane.hopsCompleted]) revert InvalidChainSelector();
 
         lane.hopsCompleted++;
         lane.totalLatency += latency;
@@ -270,7 +282,9 @@ contract LaneController is LaneControllerPausable, ILaneController, IReceiver {
     }
 
     /// @notice Claim a bettor's pro-rata share of the winner and/or runner-up pools.
-    function claimPrize(uint256 roundId) external onlyRound(roundId) whenNotPaused returns (uint256 amount) {
+    /// @dev Deliberately NOT `whenNotPaused`: a paused (or never-unpaused) contract must
+    ///      not be able to freeze settled user funds.
+    function claimPrize(uint256 roundId) external onlyRound(roundId) returns (uint256 amount) {
         Round storage round = s_rounds[roundId];
         if (!round.prizesDistributed) revert NotSettled();
 

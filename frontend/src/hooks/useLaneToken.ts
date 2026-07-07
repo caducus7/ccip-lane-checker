@@ -16,6 +16,7 @@ import {
 } from "@/lib/contracts";
 import { chainIdToSelector } from "@/lib/chains";
 import type { SupportedChainId } from "@/lib/chains";
+import { useTokenDecimals } from "@/hooks/useTokenDecimals";
 
 export function useLaneTokenBalance() {
   const { address, chainId } = useAccount();
@@ -63,13 +64,12 @@ export function useGameCounter() {
   });
 }
 
-const TOKEN_DECIMALS = 18;
-
 export function useLaneTokenActions() {
   const { chainId } = useAccount();
   const laneToken = chainId ? getLaneTokenAddress(chainId) : undefined;
   const deployment = chainId ? getDeploymentByChainId(chainId) : undefined;
   const underlyingToken = deployment?.underlyingToken;
+  const { data: decimals } = useTokenDecimals(underlyingToken);
   const { writeContract, data: hash, isPending, error, reset } =
     useWriteContract();
 
@@ -78,22 +78,29 @@ export function useLaneTokenActions() {
   });
 
   const approveUnderlying = (amount: string) => {
-    if (!underlyingToken || !laneToken || !isDeployed(laneToken)) return;
+    if (
+      !underlyingToken ||
+      !laneToken ||
+      !isDeployed(laneToken) ||
+      decimals === undefined
+    ) {
+      return;
+    }
     writeContract({
       address: underlyingToken,
       abi: erc20Abi,
       functionName: "approve",
-      args: [laneToken, parseUnits(amount, TOKEN_DECIMALS)],
+      args: [laneToken, parseUnits(amount, decimals)],
     });
   };
 
   const deposit = (amount: string) => {
-    if (!laneToken || !isDeployed(laneToken)) return;
+    if (!laneToken || !isDeployed(laneToken) || decimals === undefined) return;
     writeContract({
       address: laneToken,
       abi: laneTokenAbi,
       functionName: "deposit",
-      args: [parseUnits(amount, TOKEN_DECIMALS)],
+      args: [parseUnits(amount, decimals)],
     });
   };
 
@@ -102,14 +109,14 @@ export function useLaneTokenActions() {
     amount: string,
     maxHops: number
   ) => {
-    if (!laneToken || !isDeployed(laneToken)) return;
+    if (!laneToken || !isDeployed(laneToken) || decimals === undefined) return;
     writeContract({
       address: laneToken,
       abi: laneTokenAbi,
       functionName: "startGame",
       args: [
         chainIdToSelector(destChainId),
-        parseUnits(amount, TOKEN_DECIMALS),
+        parseUnits(amount, decimals),
         maxHops,
       ],
     });
@@ -126,5 +133,6 @@ export function useLaneTokenActions() {
     error,
     reset,
     isDeployed: isDeployed(laneToken),
+    decimals,
   };
 }

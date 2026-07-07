@@ -161,7 +161,7 @@ contract ParimutuelRaceTest is Test {
             messageId: keccak256("forged"),
             sourceChainSelector: localSelector,
             sender: abi.encode(attacker),
-            data: abi.encode(roundId, uint8(0), block.timestamp),
+            data: abi.encode(roundId, uint8(0), ChainConfig.ARBITRUM_SEPOLIA_SELECTOR, block.timestamp),
             destTokenAmounts: new Client.EVMTokenAmount[](0)
         });
 

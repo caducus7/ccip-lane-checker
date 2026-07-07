@@ -1,8 +1,8 @@
 {
   "$schema": "./testnet.schema.json",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "updatedAt": null,
-  "notes": "Fill deployed addresses after running DeployAll.s.sol on each chain. Infra addresses are canonical Chainlink testnet values.",
+  "notes": "Fill deployed addresses after running DeployAll.s.sol on each chain. Infra addresses are canonical Chainlink testnet values. creForwarder values are CRE KeystoneForwarder addresses (verify at docs.chain.link CRE forwarder directory).",
   "chains": {
     "ethereum-sepolia": {
       "chainId": 11155111,
@@ -12,12 +12,25 @@
         "linkToken": "0x779877A7B0D9E8603169DdbD7836e478b4624789",
         "vrfCoordinator": "0x9DdfaCa8183c41ad55329BdeeD9F6A8d53168B1B",
         "vrfKeyHash": "0x787d74caea10b2b357790d5b5247c2f63d1d91572a9846f780606e4d953677ae",
-        "vrfSubscriptionId": null
+        "vrfSubscriptionId": null,
+        "creForwarder": "0xF8344CFd5c43616a4366C34E3EEE75af79a74482"
       },
       "contracts": {
         "LaneToken": null,
         "LaneController": null,
         "LaneExecutor": null
+      },
+      "wiring": {
+        "creForwarder": "0xF8344CFd5c43616a4366C34E3EEE75af79a74482",
+        "hopRecorder": null,
+        "remoteExecutors": {
+          "3478487238524512106": null,
+          "10344971235874465080": null
+        },
+        "remoteLaneTokens": {
+          "3478487238524512106": null,
+          "10344971235874465080": null
+        }
       }
     },
     "arbitrum-sepolia": {
@@ -28,12 +41,25 @@
         "linkToken": "0xb1D4538B4571d411F07960EF2838Ce337FE1E80E",
         "vrfCoordinator": "0x5CE8D5A2BC84beb22a398CCA51996F7930313D61",
         "vrfKeyHash": "0x1770bdc7eec7771f7ba4ffd640f34260d7f095b79c92d34a5b2551d6f6cfd2be",
-        "vrfSubscriptionId": null
+        "vrfSubscriptionId": null,
+        "creForwarder": "0x76c9cf548b4179F8901cda1f8623568b58215E62"
       },
       "contracts": {
         "LaneToken": null,
         "LaneController": null,
         "LaneExecutor": null
+      },
+      "wiring": {
+        "creForwarder": "0x76c9cf548b4179F8901cda1f8623568b58215E62",
+        "hopRecorder": null,
+        "remoteExecutors": {
+          "16015286601757825753": null,
+          "10344971235874465080": null
+        },
+        "remoteLaneTokens": {
+          "16015286601757825753": null,
+          "10344971235874465080": null
+        }
       }
     },
     "base-sepolia": {
@@ -44,12 +70,25 @@
         "linkToken": "0xE4aB69C077896252FAFBD49EFD26B5D171A32410",
         "vrfCoordinator": "0x5C210eF41CD1a72de73bF76eC39637bB0d3d7BEE",
         "vrfKeyHash": "0x9e1344a1247c8a1785d0a4681a27152bffdb43666ae5bf7d14d24a5efd44bf71",
-        "vrfSubscriptionId": null
+        "vrfSubscriptionId": null,
+        "creForwarder": "0xF8344CFd5c43616a4366C34E3EEE75af79a74482"
       },
       "contracts": {
         "LaneToken": null,
         "LaneController": null,
         "LaneExecutor": null
+      },
+      "wiring": {
+        "creForwarder": "0xF8344CFd5c43616a4366C34E3EEE75af79a74482",
+        "hopRecorder": null,
+        "remoteExecutors": {
+          "16015286601757825753": null,
+          "3478487238524512106": null
+        },
+        "remoteLaneTokens": {
+          "16015286601757825753": null,
+          "3478487238524512106": null
+        }
       }
     }
   }

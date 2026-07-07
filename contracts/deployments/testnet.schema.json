@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "CCIP Lane Checker testnet deployments",
+  "type": "object",
+  "required": ["version", "chains"],
+  "properties": {
+    "version": { "type": "string" },
+    "updatedAt": { "type": ["string", "null"], "format": "date-time" },
+    "notes": { "type": "string" },
+    "chains": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["chainId", "chainSelector", "infra", "contracts"],
+        "properties": {
+          "chainId": { "type": "integer" },
+          "chainSelector": { "type": "string" },
+          "infra": {
+            "type": "object",
+            "properties": {
+              "ccipRouter": { "type": "string" },
+              "linkToken": { "type": "string" },
+              "vrfCoordinator": { "type": "string" },
+              "vrfKeyHash": { "type": "string" },
+              "vrfSubscriptionId": { "type": ["string", "null"] },
+              "creForwarder": { "type": "string" }
+            }
+          },
+          "contracts": {
+            "type": "object",
+            "properties": {
+              "LaneToken": { "type": ["string", "null"] },
+              "LaneController": { "type": ["string", "null"] },
+              "LaneExecutor": { "type": ["string", "null"] }
+            }
+          },
+          "wiring": {
+            "type": "object",
+            "properties": {
+              "creForwarder": { "type": "string" },
+              "hopRecorder": { "type": "string" },
+              "remoteExecutors": {
+                "type": "object",
+                "additionalProperties": { "type": "string" }
+              },
+              "remoteLaneTokens": {
+                "type": "object",
+                "additionalProperties": { "type": "string" }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

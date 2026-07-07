@@ -17,7 +17,7 @@ Start-to-finished-product plan. Each step is independently shippable.
 
 ---
 
-## Step 0 — Bootstrap ✅ (this session)
+## Step 0 — Bootstrap ✅
 
 - [x] New monorepo at `ccip-lane-checker`
 - [x] Foundry scaffold + deps (no full chainlink monorepo submodule)
@@ -28,60 +28,64 @@ Start-to-finished-product plan. Each step is independently shippable.
 
 ---
 
-## Step 1 — Contract Foundation
+## Step 1 — Contract Foundation ✅
 
 **Goal:** Clean, tested on-chain core with CCIP vNext-ready boundaries.
 
-1. Add `interfaces/ICcipRouter.sol` wrapper around `IRouterClient` (swap point for vNext)
-2. Add `libraries/ChainConfig.sol` — testnet selectors (Sepolia, Arbitrum Sepolia, Base Sepolia)
-3. Add `libraries/PrizeCalculator.sol` — 70/15/10/5 split
-4. Migrate `LaneToken` VRF v2 → **VRF v2.5** (`VRFConsumerBaseV2Plus`, `uint256` sub ID)
-5. Add Chainlink Local integration test (`test/integration/CCIPLocal.t.sol`)
-6. Deploy scripts: `script/DeploySimulator.s.sol`, `script/DeployLaneToken.s.sol`
+1. [x] Add `interfaces/ICcipRouter.sol` wrapper around `IRouterClient` (swap point for vNext)
+2. [x] Add `libraries/ChainConfig.sol` — testnet selectors (Sepolia, Arbitrum Sepolia, Base Sepolia)
+3. [x] Add `libraries/PrizeCalculator.sol` — 70/15/10/5 split
+4. [x] Migrate `LaneToken` VRF v2 → **VRF v2.5** (`VRFConsumerBaseV2Plus`, `uint256` sub ID)
+5. [x] Add Chainlink Local integration test (`test/integration/CCIPLocal.t.sol`)
+6. [x] Deploy scripts: `script/DeploySimulator.s.sol`, `script/DeployLaneToken.s.sol`, `script/DeployAll.s.sol`
 
-**Exit criteria:** `forge test` green; local CCIP simulator round-trip works.
+**Exit criteria:** `forge test` green; local CCIP simulator round-trip works. **Met.**
 
 ---
 
-## Step 2 — Parimutuel Mode (`LaneController`)
+## Step 2 — Parimutuel Mode (`LaneController`) ✅
 
 **Goal:** Multi-lane betting pool.
 
-1. Implement `LaneController.sol`:
+1. [x] Implement `LaneController.sol`:
    - `createRound(lanePaths)` — admin/CRE creates round with N predefined chain circuits
    - `buyLaneTokens(roundId, laneId, amount)` — parimutuel entry
    - `startRace(roundId)` — locks betting, triggers lane token sends
    - `recordHop(roundId, laneId, latency)` — called by per-chain `LaneExecutor`
    - `declareWinner(roundId, laneId)` — CRE-gated or first-complete-wins
    - `distributePrizes(roundId)` — via `PrizeCalculator`
-2. Implement `LaneExecutor.sol` per chain — `CCIPReceiver`, forwards hop data to controller
-3. Fuzz tests on prize math and round state machine
-4. Multi-fork Chainlink Local test: 2 lanes, 3 chains
+2. [x] Implement `LaneExecutor.sol` per chain — `CCIPReceiver`, forwards hop data to controller
+3. [x] Fuzz tests on prize math and round state machine (`LaneController.t.sol`, `PrizeCalculator.t.sol`)
+4. [x] Multi-fork Chainlink Local test: 2 lanes, 3 chains (`test/integration/ParimutuelRace.t.sol`)
 
-**Exit criteria:** Full parimutuel round simulates locally end-to-end.
+**Exit criteria:** Full parimutuel round simulates locally end-to-end. **Met.**
 
 ---
 
-## Step 3 — CRE Orchestration
+## Step 3 — CRE Orchestration 🟡
 
 **Goal:** Replace Automation/Functions with CRE workflows.
 
 ### Workflow A: `round-scheduler` (CRON)
-- Trigger: `0 */30 * * * *` (every 30 min on testnet)
-- Action: EVM write `LaneController.createRound()` + `startRace()` after betting window
+- [x] Trigger: `0 */30 * * * *` (every 30 min on testnet)
+- [x] Action: EVM write `LaneController.createRound()` + `startRace()` after betting window
 
 ### Workflow B: `hop-monitor` (EVM Log)
-- Trigger: `HopCompleted`, `LaneFinished` events on all deployed chains
-- Action: Update round state; if first finisher → `declareWinner()`
+- [x] Trigger: `HopCompleted`, `LaneFinished` events on all deployed chains
+- [x] Action: Update round state; if first finisher → `declareWinner()`
 
 ### Workflow C: `lane-benchmark` (CRON + HTTP)
-- Trigger: every 5 min
-- Read: CCIP API lane latency for configured selectors
-- Write: cache to HTTP endpoint / on-chain registry for frontend
+- [x] Trigger: every 5 min
+- [x] Read: CCIP API lane latency for configured selectors
+- [x] Write: cache to HTTP endpoint / on-chain registry for frontend
 
 ### Workflow D: `settlement` (EVM Log)
-- Trigger: `WinnerDeclared` event
-- Action: EVM write `distributePrizes()` + `sweepUnclaimed()`
+- [x] Trigger: `WinnerDeclared` event
+- [x] Action: EVM write `distributePrizes()`
+
+### Workflow E: `hop-sender` (CRON + EVM Log)
+- [x] Trigger: CRON initial hops + `HopReceived` continuation
+- [x] Action: `LaneExecutor.sendHop` per race leg
 
 **Setup:**
 ```bash
@@ -92,85 +96,92 @@ cre workflow simulate round-scheduler --target staging-settings
 ```
 
 **Exit criteria:** Simulated CRE round creates, monitors, and settles a race on testnet.
+- [x] Local simulation (`cre workflow simulate`) compiles and runs
+- [ ] Live testnet DON deployment + E2E round with real CCIP hops
 
 ---
 
-## Step 4 — Testnet Deployment
+## Step 4 — Testnet Deployment 🟡
 
 **Goal:** Live demo on 2–3 testnets.
 
 **Chains:** Ethereum Sepolia, Arbitrum Sepolia, Base Sepolia (CCIP-connected lanes)
 
-1. Deploy `LaneToken` + `LaneController` + `LaneExecutor` per chain
-2. Register VRF v2.5 subscription per chain; fund with LINK
-3. Allowlist CCIP lanes between deployed chains
-4. Deploy CRE workflows to testnet DON
-5. Smoke test: solo challenge + one parimutuel round
-6. Document addresses in `contracts/deployments/testnet.json`
+1. [x] Deploy script: `script/DeployAll.s.sol` (LaneToken + LaneController + LaneExecutor + wiring)
+2. [x] `ChainConfig.creForwarder` per network (KeystoneForwarder addresses)
+3. [x] Deployment manifest: `contracts/deployments/testnet.json` (+ schema)
+4. [x] Step-by-step checklist: `docs/DEPLOY_TESTNET.md`
+5. [ ] Register VRF v2.5 subscription per chain; fund with LINK
+6. [ ] Allowlist CCIP lanes between deployed chains (CCIP Directory)
+7. [ ] Deploy contracts on testnet (3 chains)
+8. [ ] Cross-chain peer wiring (`remoteExecutors`, `remoteLaneTokens`, `hopRecorder`)
+9. [ ] Deploy CRE workflows to testnet DON
+10. [ ] Smoke test: solo challenge + one parimutuel round
+11. [ ] Fill live addresses in `contracts/deployments/testnet.json`
 
-**Exit criteria:** Manual E2E race completes on testnet with CRE settlement.
+**Exit criteria:** Manual E2E race completes on testnet with CRE settlement. **Not yet met.**
 
 ---
 
-## Step 5 — Frontend (Testnet Demo)
+## Step 5 — Frontend (Testnet Demo) 🟡
 
 **Goal:** Playable UI for both game modes.
 
 **Stack:** Next.js 15, wagmi/viem, Tailwind
 
 ### Pages
-| Route | Purpose |
-|-------|---------|
-| `/` | Landing — active rounds, lane health |
-| `/solo` | Start solo challenge, watch hops live |
-| `/race/:roundId` | Parimutuel — bet on lanes, live race viz |
-| `/leaderboard` | Solo + race history, latency stats |
-| `/lanes` | CCIP lane benchmark dashboard (API-fed) |
+| Route | Purpose | Status |
+|-------|---------|--------|
+| `/` | Landing — active rounds, lane health | [x] Scaffolded |
+| `/solo` | Start solo challenge, watch hops live | [x] Scaffolded |
+| `/race/:roundId` | Parimutuel — bet on lanes, live race viz | [x] Scaffolded |
+| `/leaderboard` | Solo + race history, latency stats | [x] Scaffolded |
+| `/lanes` | CCIP lane benchmark dashboard (API-fed) | [x] Scaffolded |
 
 ### Features
-- Wallet connect (Sepolia + Arbitrum Sepolia)
-- Live hop progress via CCIP message status polling
-- Animated lane race visualization
-- Bet placement + prize pool display
-- CCIP Explorer deep links per message
+- [x] Wallet connect (Sepolia + Arbitrum Sepolia + Base Sepolia)
+- [ ] Live hop progress via CCIP message status polling (needs testnet deploy)
+- [x] Animated lane race visualization
+- [x] Bet placement + prize pool display
+- [ ] CCIP Explorer deep links per message (needs live message IDs)
 
-**Exit criteria:** Full solo + parimutuel playable from browser on testnet.
+**Exit criteria:** Full solo + parimutuel playable from browser on testnet. **Blocked on Step 4.**
 
 ---
 
-## Step 6 — Benchmarking Layer
+## Step 6 — Benchmarking Layer 🟡
 
 **Goal:** Real CCIP lane performance data, not just game latency.
 
-1. CRE `lane-benchmark` workflow polls CCIP API `lane-latency` per route
-2. Store rolling p50/p95 latency per lane in on-chain `LaneRegistry` or off-chain cache
-3. Frontend `/lanes` page: heatmap of lane health, fees, success rate
-4. Use benchmark data to weight lane difficulty in race scoring (optional handicap)
+1. [x] CRE `lane-benchmark` workflow polls CCIP API `lane-latency` per route
+2. [ ] Store rolling p50/p95 latency per lane in on-chain `LaneRegistry` or off-chain cache
+3. [x] Frontend `/lanes` page scaffold (heatmap placeholder)
+4. [ ] Use benchmark data to weight lane difficulty in race scoring (optional handicap)
 
-**Exit criteria:** Dashboard shows live CCIP lane metrics alongside game results.
+**Exit criteria:** Dashboard shows live CCIP lane metrics alongside game results. **Partial.**
 
 ---
 
 ## Step 7 — Production Hardening
 
-1. Security review (`solidity-auditor` skill on full `contracts/src`)
-2. Access control audit on CRE write paths (only forwarder can settle)
-3. Gas optimization pass
-4. Rate limiting on round creation
-5. Emergency pause on `LaneController`
-6. Comprehensive integration test suite (Chainlink Local multi-fork)
-7. CI: `forge test` + `cre workflow simulate` on PR
+1. [ ] Security review (`solidity-auditor` skill on full `contracts/src`)
+2. [x] Access control audit on CRE write paths (`CreReportAuth` selector allowlist; `creForwarder` gating)
+3. [ ] Gas optimization pass
+4. [ ] Rate limiting on round creation
+5. [x] Emergency pause on `LaneController` (`LaneControllerPausable`)
+6. [x] Comprehensive integration test suite (Chainlink Local multi-fork)
+7. [ ] CI: `forge test` + `cre workflow simulate` on PR
 
 ---
 
 ## Step 8 — Mainnet Path
 
-1. CCIP vNext migration assessment (when public)
-2. Mainnet lane selection (high-liquidity routes only)
-3. Audit (external or contest)
-4. Gradual rollout: solo mode first → parimutuel with capped pools
-5. CRE workflows on mainnet DON
-6. Monitoring: CCIP Explorer + custom alerts for stuck messages
+1. [ ] CCIP vNext migration assessment (when public)
+2. [ ] Mainnet lane selection (high-liquidity routes only)
+3. [ ] Audit (external or contest)
+4. [ ] Gradual rollout: solo mode first → parimutuel with capped pools
+5. [ ] CRE workflows on mainnet DON
+6. [ ] Monitoring: CCIP Explorer + custom alerts for stuck messages
 
 ---
 
@@ -218,5 +229,7 @@ When vNext is public:
 **Step 2:** "Implement Step 2 — full LaneController parimutuel mode with LaneExecutor and fuzz tests"
 
 **Step 3:** "Implement Step 3 — CRE workflows round-scheduler, hop-monitor, settlement"
+
+**Step 4:** "Follow docs/DEPLOY_TESTNET.md — deploy contracts on Sepolia, Arbitrum Sepolia, Base Sepolia"
 
 **Step 5:** "Implement Step 5 — Next.js frontend with solo + parimutuel pages on testnet"

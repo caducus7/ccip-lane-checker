@@ -14,8 +14,7 @@ import {
   isDeployed,
   laneControllerAbi,
 } from "@/lib/contracts";
-
-const BETTING_DECIMALS = 18; // adjust per token after deploy
+import { useTokenDecimals } from "@/hooks/useTokenDecimals";
 
 export function useRoundCounter() {
   const { chainId } = useAccount();
@@ -101,6 +100,7 @@ export function useLaneControllerActions() {
   const controller = chainId ? getLaneControllerAddress(chainId) : undefined;
   const deployment = chainId ? getDeploymentByChainId(chainId) : undefined;
   const bettingToken = deployment?.underlyingToken;
+  const { data: decimals } = useTokenDecimals(bettingToken);
 
   const { writeContract, data: hash, isPending, error, reset } =
     useWriteContract();
@@ -110,12 +110,19 @@ export function useLaneControllerActions() {
   });
 
   const approveBettingToken = (amount: string) => {
-    if (!bettingToken || !controller || !isDeployed(controller)) return;
+    if (
+      !bettingToken ||
+      !controller ||
+      !isDeployed(controller) ||
+      decimals === undefined
+    ) {
+      return;
+    }
     writeContract({
       address: bettingToken,
       abi: erc20Abi,
       functionName: "approve",
-      args: [controller, parseUnits(amount, BETTING_DECIMALS)],
+      args: [controller, parseUnits(amount, decimals)],
     });
   };
 
@@ -124,12 +131,14 @@ export function useLaneControllerActions() {
     laneId: number,
     amount: string
   ) => {
-    if (!controller || !isDeployed(controller)) return;
+    if (!controller || !isDeployed(controller) || decimals === undefined) {
+      return;
+    }
     writeContract({
       address: controller,
       abi: laneControllerAbi,
       functionName: "buyLaneTokens",
-      args: [roundId, laneId, parseUnits(amount, BETTING_DECIMALS)],
+      args: [roundId, laneId, parseUnits(amount, decimals)],
     });
   };
 
@@ -155,6 +164,7 @@ export function useLaneControllerActions() {
     reset,
     isDeployed: isDeployed(controller),
     bettingToken,
+    decimals,
   };
 }
 

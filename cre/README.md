@@ -12,7 +12,9 @@ Project root: `cre/lane-checker-cre/` (contains `project.yaml`).
 | `hop-sender` | CRON `0 * * * * * *` + EVM Log (`HopReceived`) | `sendHop` on LaneExecutor (initial + continuation hops) |
 | `hop-monitor` | EVM Log (`HopCompleted`, `LaneFinished`) | Track hops; winner declared on-chain by `recordHop` |
 | `lane-benchmark` | CRON `0 */5 * * * *` + HTTP | Poll CCIP API lane latency; JSON cache output |
-| `settlement` | EVM Log (`WinnerDeclared`) | `distributePrizes` + `sweepUnclaimed` on LaneController |
+| `settlement` | EVM Log (`WinnerDeclared`) | `distributePrizes` on LaneController |
+
+`sweepUnclaimed` is **not** called here — it runs only after the claim window (manual or a delayed CRON) so bettors can `claimPrize` first.
 
 ## Prerequisites
 

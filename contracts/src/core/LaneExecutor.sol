@@ -38,6 +38,7 @@ contract LaneExecutor is CCIPReceiver, Ownable, ILaneExecutor, IReceiver {
     error UnauthorizedSource(address sender, address expected);
     error NotAuthorized();
     error ReportExecutionFailed();
+    error ZeroAddress();
 
     modifier onlyHopSender() {
         if (!_creReportActive && msg.sender != owner() && !hopSenders[msg.sender]) {
@@ -57,6 +58,7 @@ contract LaneExecutor is CCIPReceiver, Ownable, ILaneExecutor, IReceiver {
     }
 
     function setLaneController(address controller) external onlyOwner {
+        if (controller == address(0)) revert ZeroAddress();
         s_laneController = ILaneController(controller);
     }
 
@@ -69,6 +71,7 @@ contract LaneExecutor is CCIPReceiver, Ownable, ILaneExecutor, IReceiver {
     }
 
     function setCreForwarder(address forwarder) external onlyOwner {
+        if (forwarder == address(0)) revert ZeroAddress();
         creForwarder = forwarder;
     }
 
@@ -94,7 +97,9 @@ contract LaneExecutor is CCIPReceiver, Ownable, ILaneExecutor, IReceiver {
 
         Client.EVM2AnyMessage memory message = Client.EVM2AnyMessage({
             receiver: abi.encode(destExecutor),
-            data: abi.encode(roundId, laneId, block.timestamp),
+            // destChainSelector rides along so the receiving executor can report which
+            // lane-path chain this hop landed on (the controller validates it per hop index).
+            data: abi.encode(roundId, laneId, destChainSelector, block.timestamp),
             tokenAmounts: new Client.EVMTokenAmount[](0),
             extraArgs: "",
             feeToken: address(0)
@@ -114,13 +119,14 @@ contract LaneExecutor is CCIPReceiver, Ownable, ILaneExecutor, IReceiver {
         address sender = abi.decode(message.sender, (address));
         if (sender != expectedSender) revert UnauthorizedSource(sender, expectedSender);
 
-        (uint256 roundId, uint8 laneId, uint256 sendTime) = abi.decode(message.data, (uint256, uint8, uint256));
+        (uint256 roundId, uint8 laneId, uint64 hopChainSelector, uint256 sendTime) =
+            abi.decode(message.data, (uint256, uint8, uint64, uint256));
         if (sendTime > block.timestamp) revert InvalidSendTime();
 
         uint256 latency = block.timestamp - sendTime;
 
         emit HopReceived(roundId, laneId, message.sourceChainSelector, latency);
-        s_laneController.recordHop(roundId, laneId, message.sourceChainSelector, sendTime);
+        s_laneController.recordHop(roundId, laneId, hopChainSelector, sendTime);
     }
 
     error InvalidSendTime();

@@ -60,9 +60,10 @@ contract LaneControllerTest is Test {
     }
 
     function _finishLane(uint256 roundId, uint8 laneId) internal {
+        (uint64[] memory path,,,,,) = controller.getLane(roundId, laneId);
         vm.startPrank(executor);
-        controller.recordHop(roundId, laneId, SEPOLIA, block.timestamp - 120);
-        controller.recordHop(roundId, laneId, ARBITRUM, block.timestamp - 90);
+        controller.recordHop(roundId, laneId, path[0], block.timestamp - 120);
+        controller.recordHop(roundId, laneId, path[1], block.timestamp - 90);
         vm.stopPrank();
     }
 
@@ -286,6 +287,13 @@ contract LaneControllerTest is Test {
         vm.expectRevert("empty path");
         controller.createRound(withEmpty);
 
+        uint64[][] memory tooLong = new uint64[][](2);
+        tooLong[0] = new uint64[](1);
+        tooLong[0][0] = SEPOLIA;
+        tooLong[1] = new uint64[](controller.MAX_HOPS() + 1);
+        vm.expectRevert("path too long");
+        controller.createRound(tooLong);
+
         vm.stopPrank();
     }
 
@@ -363,15 +371,16 @@ contract LaneControllerTest is Test {
         controller.startRace(roundId);
 
         // Interleave: loser makes progress but winner completes first.
+        (uint64[] memory loserPath,,,,,) = controller.getLane(roundId, loser);
         vm.prank(executor);
-        controller.recordHop(roundId, loser, SEPOLIA, _sendTime(50));
+        controller.recordHop(roundId, loser, loserPath[0], _sendTime(50));
         _finishLane(roundId, winner);
 
         assertEq(controller.getRoundWinner(roundId), winner);
 
         // Loser finishing later becomes runner-up, never winner.
         vm.prank(executor);
-        controller.recordHop(roundId, loser, ARBITRUM, _sendTime(50));
+        controller.recordHop(roundId, loser, loserPath[1], _sendTime(50));
         assertEq(controller.getRoundWinner(roundId), winner);
         assertEq(controller.getRoundRunnerUp(roundId), loser);
     }
@@ -411,6 +420,42 @@ contract LaneControllerTest is Test {
         vm.prank(executor);
         vm.expectRevert(LaneController.InvalidSendTime.selector);
         controller.recordHop(roundId, 0, SEPOLIA, block.timestamp + 1);
+    }
+
+    function test_recordHop_wrongChainForHopIndex_reverts() public {
+        uint256 roundId = _createRound();
+        vm.prank(cre);
+        controller.startRace(roundId);
+
+        // Lane 0 path is [SEPOLIA, ARBITRUM]: hop 0 must be SEPOLIA.
+        vm.prank(executor);
+        vm.expectRevert(LaneController.InvalidChainSelector.selector);
+        controller.recordHop(roundId, 0, ARBITRUM, _sendTime(10));
+
+        // Correct chain for hop 0 is accepted, then hop 1 must be ARBITRUM.
+        vm.startPrank(executor);
+        controller.recordHop(roundId, 0, SEPOLIA, _sendTime(10));
+        vm.expectRevert(LaneController.InvalidChainSelector.selector);
+        controller.recordHop(roundId, 0, SEPOLIA, _sendTime(10));
+        vm.stopPrank();
+    }
+
+    function test_claimPrize_worksWhilePaused() public {
+        uint256 roundId = _createRound();
+        vm.prank(player);
+        controller.buyLaneTokens(roundId, 0, 100e6);
+
+        vm.prank(cre);
+        controller.startRace(roundId);
+        _finishLane(roundId, 0);
+        vm.prank(cre);
+        controller.distributePrizes(roundId);
+
+        controller.pause();
+
+        PrizeCalculator.Payout memory p = PrizeCalculator.calculate(100e6);
+        vm.prank(player);
+        assertEq(controller.claimPrize(roundId), p.winner);
     }
 
     function test_sweepUnclaimed_afterSettlement() public {

@@ -20,15 +20,59 @@ const ZERO = "0x0000000000000000000000000000000000000000" as Address;
 
 type RawDeployment = typeof testnetDeployments;
 
+const ENV_BY_CHAIN: Record<
+  ChainDeploymentKey,
+  {
+    laneToken: string | undefined;
+    laneController: string | undefined;
+    laneExecutor: string | undefined;
+    linkToken: string | undefined;
+  }
+> = {
+  "ethereum-sepolia": {
+    laneToken: process.env.NEXT_PUBLIC_SEPOLIA_LANE_TOKEN,
+    laneController: process.env.NEXT_PUBLIC_SEPOLIA_LANE_CONTROLLER,
+    laneExecutor: process.env.NEXT_PUBLIC_SEPOLIA_LANE_EXECUTOR,
+    linkToken: process.env.NEXT_PUBLIC_SEPOLIA_LINK,
+  },
+  "arbitrum-sepolia": {
+    laneToken: process.env.NEXT_PUBLIC_ARBITRUM_SEPOLIA_LANE_TOKEN,
+    laneController: process.env.NEXT_PUBLIC_ARBITRUM_SEPOLIA_LANE_CONTROLLER,
+    laneExecutor: process.env.NEXT_PUBLIC_ARBITRUM_SEPOLIA_LANE_EXECUTOR,
+    linkToken: process.env.NEXT_PUBLIC_ARBITRUM_SEPOLIA_LINK,
+  },
+  "base-sepolia": {
+    laneToken: process.env.NEXT_PUBLIC_BASE_SEPOLIA_LANE_TOKEN,
+    laneController: process.env.NEXT_PUBLIC_BASE_SEPOLIA_LANE_CONTROLLER,
+    laneExecutor: process.env.NEXT_PUBLIC_BASE_SEPOLIA_LANE_EXECUTOR,
+    linkToken: process.env.NEXT_PUBLIC_BASE_SEPOLIA_LINK,
+  },
+};
+
+function resolveAddress(
+  fromDeployment: string | null | undefined,
+  fromEnv: string | undefined
+): Address {
+  const candidate = fromDeployment ?? fromEnv;
+  if (!candidate || !/^0x[a-fA-F0-9]{40}$/.test(candidate)) {
+    return ZERO;
+  }
+  return candidate as Address;
+}
+
 function mapChain(key: ChainDeploymentKey): ChainDeployment {
   const chain = raw.chains[key];
+  const env = ENV_BY_CHAIN[key];
   return {
     chainId: chain.chainId,
     ccipChainSelector: chain.chainSelector,
-    laneToken: (chain.contracts.LaneToken ?? ZERO) as Address,
-    laneController: (chain.contracts.LaneController ?? ZERO) as Address,
-    laneExecutor: (chain.contracts.LaneExecutor ?? ZERO) as Address,
-    underlyingToken: (chain.infra.linkToken ?? ZERO) as Address,
+    laneToken: resolveAddress(chain.contracts.LaneToken, env.laneToken),
+    laneController: resolveAddress(
+      chain.contracts.LaneController,
+      env.laneController
+    ),
+    laneExecutor: resolveAddress(chain.contracts.LaneExecutor, env.laneExecutor),
+    underlyingToken: resolveAddress(chain.infra.linkToken, env.linkToken),
   };
 }
 
@@ -91,23 +135,42 @@ export const laneTokenAbi = parseAbi([
   "event BridgeStarted(bytes32 indexed messageId, uint64 destChainSelector, uint256 amount)",
 ]);
 
-/** Minimal ABI for LaneController parimutuel mode */
+/**
+ * LaneController ABI — aligned with cre/lane-checker-cre/shared/lane-controller-abi.ts
+ * plus frontend read helpers (buyLaneTokens, getLanePool, getTotalPrizePool, getRoundRunnerUp).
+ */
 export const laneControllerAbi = parseAbi([
-  "function currentRoundId() external view returns (uint256)",
+  "function createRound(uint64[][] lanePaths) external returns (uint256 roundId)",
   "function buyLaneTokens(uint256 roundId, uint8 laneId, uint256 amount) external",
+  "function startRace(uint256 roundId) external",
+  "function declareWinner(uint256 roundId, uint8 laneId) external",
+  "function distributePrizes(uint256 roundId) external",
+  "function claimPrize(uint256 roundId) external returns (uint256 amount)",
+  "function sweepUnclaimed(uint256 roundId) external",
   "function getRoundWinner(uint256 roundId) external view returns (uint8 winnerLaneId)",
+  "function getRoundRunnerUp(uint256 roundId) external view returns (uint8 runnerUpLaneId)",
+  "function getRoundState(uint256 roundId) external view returns (uint8 state)",
+  "function getLane(uint256 roundId, uint8 laneId) external view returns (uint64[] chainPath, uint8 hopsCompleted, uint8 requiredHops, uint256 totalLatency, uint256 finishTime, bool finished)",
   "function getLanePool(uint256 roundId, uint8 laneId) external view returns (uint256)",
   "function getTotalPrizePool(uint256 roundId) external view returns (uint256)",
-  "function claimPrize(uint256 roundId) external returns (uint256 amount)",
-  "function getRoundState(uint256 roundId) external view returns (uint8)",
+  "function currentRoundId() external view returns (uint256)",
   "event RoundCreated(uint256 indexed roundId, uint8 laneCount)",
   "event BetPlaced(uint256 indexed roundId, uint8 indexed laneId, address indexed bettor, uint256 amount)",
   "event RaceStarted(uint256 indexed roundId)",
   "event HopCompleted(uint256 indexed roundId, uint8 indexed laneId, uint64 chainSelector, uint256 latency, uint8 hopIndex)",
+  "event LaneFinished(uint256 indexed roundId, uint8 indexed laneId, uint256 finishTime)",
   "event WinnerDeclared(uint256 indexed roundId, uint8 indexed laneId, uint256 finishTime)",
   "event PrizesDistributed(uint256 indexed roundId, uint8 winnerLaneId, uint256 winnerPayout)",
   "event PrizeClaimed(uint256 indexed roundId, address indexed bettor, uint256 amount)",
 ]);
+
+/** RoundState enum values from LaneController.sol */
+export const RoundState = {
+  Betting: 0,
+  Racing: 1,
+  Finished: 2,
+  Settled: 3,
+} as const;
 
 export const erc20Abi = parseAbi([
   "function approve(address spender, uint256 amount) external returns (bool)",

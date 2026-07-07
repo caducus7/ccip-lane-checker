@@ -6,6 +6,7 @@ import {Client} from "@chainlink/contracts/src/v0.8/ccip/libraries/Client.sol";
 import {VRFConsumerBaseV2Plus} from "@chainlink/contracts/src/v0.8/vrf/dev/VRFConsumerBaseV2Plus.sol";
 import {VRFV2PlusClient} from "@chainlink/contracts/src/v0.8/vrf/dev/libraries/VRFV2PlusClient.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {ICcipRouter} from "../interfaces/ICcipRouter.sol";
 
 /// @title LaneToken
@@ -13,6 +14,8 @@ import {ICcipRouter} from "../interfaces/ICcipRouter.sol";
 /// @dev VRF v2.5 hop randomness is on-chain verifiable (fair for players).
 ///      CCIP access goes through `ICcipRouter` — the single swap point for vNext.
 contract LaneToken is CCIPReceiver, VRFConsumerBaseV2Plus {
+    using SafeERC20 for IERC20;
+
     struct GameRound {
         address initiator;
         uint8 hopCount;
@@ -28,7 +31,9 @@ contract LaneToken is CCIPReceiver, VRFConsumerBaseV2Plus {
 
     uint256 private immutable i_vrfSubscriptionId;
     bytes32 private immutable i_gasLane;
-    uint32 private constant CALLBACK_GAS_LIMIT = 100_000;
+    /// @dev fulfillRandomWords performs a CCIP token send (getFee + ccipSend); 100k is far
+    ///      too low and would brick active games. Sized with headroom, below VRF's 2.5M cap.
+    uint32 private constant CALLBACK_GAS_LIMIT = 1_500_000;
     uint16 private constant REQUEST_CONFIRMATIONS = 3;
     uint32 private constant NUM_WORDS = 1;
 
@@ -56,6 +61,7 @@ contract LaneToken is CCIPReceiver, VRFConsumerBaseV2Plus {
     error NotAdmin();
     error UnknownSource(uint64 sourceChainSelector);
     error UnauthorizedSource(address sender, address expected);
+    error InvalidZeroAddress();
 
     modifier onlyAdmin() {
         if (msg.sender != admin) revert NotAdmin();
@@ -70,6 +76,9 @@ contract LaneToken is CCIPReceiver, VRFConsumerBaseV2Plus {
         bytes32 gasLane,
         uint256[] memory supportedChains
     ) CCIPReceiver(router) VRFConsumerBaseV2Plus(vrfCoordinator) {
+        if (router == address(0) || underlyingToken == address(0) || vrfCoordinator == address(0)) {
+            revert InvalidZeroAddress();
+        }
         i_underlyingToken = IERC20(underlyingToken);
         i_vrfSubscriptionId = vrfSubscriptionId;
         i_gasLane = gasLane;
@@ -77,6 +86,9 @@ contract LaneToken is CCIPReceiver, VRFConsumerBaseV2Plus {
         s_router = ICcipRouter(router);
         admin = msg.sender;
     }
+
+    /// @notice Accepts native token used to pay CCIP fees (feeToken == address(0) in `_bridge`).
+    receive() external payable {}
 
     function setRemoteLaneToken(uint64 chainSelector, address laneToken) external onlyAdmin {
         remoteLaneTokens[chainSelector] = laneToken;
@@ -89,7 +101,7 @@ contract LaneToken is CCIPReceiver, VRFConsumerBaseV2Plus {
     }
 
     function deposit(uint256 amount) external {
-        i_underlyingToken.transferFrom(msg.sender, address(this), amount);
+        i_underlyingToken.safeTransferFrom(msg.sender, address(this), amount);
         s_balances[msg.sender] += amount;
         emit Deposited(msg.sender, amount);
     }
@@ -97,7 +109,7 @@ contract LaneToken is CCIPReceiver, VRFConsumerBaseV2Plus {
     function withdraw(uint256 amount) external {
         require(s_balances[msg.sender] >= amount, "Insufficient balance");
         s_balances[msg.sender] -= amount;
-        i_underlyingToken.transfer(msg.sender, amount);
+        i_underlyingToken.safeTransfer(msg.sender, amount);
         emit Withdrawn(msg.sender, amount);
     }
 
@@ -184,7 +196,7 @@ contract LaneToken is CCIPReceiver, VRFConsumerBaseV2Plus {
         internal
         returns (bytes32 messageId)
     {
-        i_underlyingToken.approve(address(s_router), amount);
+        i_underlyingToken.forceApprove(address(s_router), amount);
 
         Client.EVMTokenAmount[] memory tokenAmounts = new Client.EVMTokenAmount[](1);
         tokenAmounts[0] = Client.EVMTokenAmount({token: address(i_underlyingToken), amount: amount});
