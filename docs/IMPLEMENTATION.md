@@ -81,13 +81,13 @@ Start-to-finished-product plan. Each step is independently shippable.
 
 ### Workflow D: `settlement` (EVM Log)
 - Trigger: `WinnerDeclared` event
-- Action: EVM write `distributePrizes()`
+- Action: EVM write `distributePrizes()` + `sweepUnclaimed()`
 
 **Setup:**
 ```bash
 cd cre/lane-checker-cre
 cre login                    # browser auth
-cre workflow simulate round-orchestrator
+cre workflow simulate round-scheduler --target staging-settings
 # add --rpc-url flags per chain
 ```
 

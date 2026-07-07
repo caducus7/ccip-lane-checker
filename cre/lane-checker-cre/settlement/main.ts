@@ -54,13 +54,22 @@ const onWinnerDeclared = (runtime: Runtime<Config>, log: EVMLog): string => {
     [roundId],
   );
 
+  const sweepTx = writeLaneController(
+    runtime,
+    evmClient,
+    laneControllerAbi,
+    "sweepUnclaimed",
+    [roundId],
+  );
+
   const result = {
     event: "WinnerDeclared",
-    action: "distributePrizes",
+    action: "distributePrizes+sweepUnclaimed",
     roundId: roundId.toString(),
     winnerLaneId: Number(laneId),
     finishTime: finishTime.toString(),
     distributePrizesTx: distributeTx,
+    sweepUnclaimedTx: sweepTx,
     txHash: bytesToHex(log.txHash),
   };
 

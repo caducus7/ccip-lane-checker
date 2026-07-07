@@ -41,14 +41,6 @@ const onCronTrigger = (
 
   runtime.log(`round-scheduler fired at ${scheduledAt}`);
 
-  const createTx = writeLaneController(
-    runtime,
-    evmClient,
-    laneControllerAbi,
-    "createRound",
-    [lanePaths],
-  );
-
   const currentRoundCall = encodeFunctionData({
     abi: laneControllerAbi,
     functionName: "currentRoundId",
@@ -65,13 +57,24 @@ const onCronTrigger = (
     })
     .result();
 
-  const roundId = decodeFunctionResult({
+  const previousRoundId = decodeFunctionResult({
     abi: laneControllerAbi,
     functionName: "currentRoundId",
     data: bytesToHex(roundResult.data),
   }) as bigint;
 
-  runtime.log(`createRound tx=${createTx}, currentRoundId=${roundId}`);
+  // createRound does ++currentRoundId; read before write to avoid stale post-write view.
+  const roundId = previousRoundId + 1n;
+
+  const createTx = writeLaneController(
+    runtime,
+    evmClient,
+    laneControllerAbi,
+    "createRound",
+    [lanePaths],
+  );
+
+  runtime.log(`createRound tx=${createTx}, roundId=${roundId}`);
 
   const startTx = writeLaneController(
     runtime,

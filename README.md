@@ -29,7 +29,9 @@ Gamified CCIP lane benchmarking: race tokens across chains, bet on lanes, and me
 
 ```bash
 cd contracts && forge test
-cd cre/lane-checker-cre && bun install --cwd ./round-orchestrator
+for wf in round-scheduler hop-sender hop-monitor settlement lane-benchmark; do
+  (cd cre/lane-checker-cre/$wf && bun install && bun run typecheck)
+done
 ```
 
 See [docs/IMPLEMENTATION.md](docs/IMPLEMENTATION.md) for the full step-by-step build plan.

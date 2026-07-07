@@ -10,11 +10,9 @@ Project root: `cre/lane-checker-cre/` (contains `project.yaml`).
 |----------|---------|--------|
 | `round-scheduler` | CRON `0 */30 * * * *` | `createRound` + `startRace` on LaneController |
 | `hop-sender` | CRON `0 * * * * * *` + EVM Log (`HopReceived`) | `sendHop` on LaneExecutor (initial + continuation hops) |
-| `hop-monitor` | EVM Log (`HopCompleted`, `LaneFinished`) | Track hops; first `LaneFinished` → `declareWinner` |
+| `hop-monitor` | EVM Log (`HopCompleted`, `LaneFinished`) | Track hops; winner declared on-chain by `recordHop` |
 | `lane-benchmark` | CRON `0 */5 * * * *` + HTTP | Poll CCIP API lane latency; JSON cache output |
-| `settlement` | EVM Log (`WinnerDeclared`) | `distributePrizes` on LaneController |
-
-Legacy hello-world scaffold: `round-orchestrator/`.
+| `settlement` | EVM Log (`WinnerDeclared`) | `distributePrizes` + `sweepUnclaimed` on LaneController |
 
 ## Prerequisites
 

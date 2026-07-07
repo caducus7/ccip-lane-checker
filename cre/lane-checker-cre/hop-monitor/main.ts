@@ -5,25 +5,15 @@ import {
   type EVMLog,
   type Runtime,
   bytesToHex,
-  encodeCallMsg,
-  LAST_FINALIZED_BLOCK_NUMBER,
   logTriggerConfig,
 } from "@chainlink/cre-sdk";
 import {
   decodeEventLog,
-  decodeFunctionResult,
-  encodeFunctionData,
   keccak256,
   toBytes,
-  zeroAddress,
   type Hex,
 } from "viem";
 import { laneControllerAbi } from "./lane-controller-abi";
-import {
-  controllerAddress,
-  createEvmClient,
-  writeLaneController,
-} from "./evm-write";
 
 export type ChainConfig = {
   chainSelectorName: string;
@@ -42,32 +32,6 @@ const HOP_COMPLETED_SIG = keccak256(
 const LANE_FINISHED_SIG = keccak256(
   toBytes("LaneFinished(uint256,uint8,uint256)"),
 ) as Hex;
-
-const getWinnerLane = (runtime: Runtime<Config>, roundId: bigint): number => {
-  const evmClient = createEvmClient(runtime.config);
-  const callData = encodeFunctionData({
-    abi: laneControllerAbi,
-    functionName: "getRoundWinner",
-    args: [roundId],
-  });
-
-  const result = evmClient
-    .callContract(runtime, {
-      call: encodeCallMsg({
-        from: zeroAddress,
-        to: controllerAddress(runtime.config),
-        data: callData,
-      }),
-      blockNumber: LAST_FINALIZED_BLOCK_NUMBER,
-    })
-    .result();
-
-  return decodeFunctionResult({
-    abi: laneControllerAbi,
-    functionName: "getRoundWinner",
-    data: bytesToHex(result.data),
-  }) as number;
-};
 
 const decodeHopCompleted = (log: EVMLog) => {
   const topics = log.topics.map((topic) => bytesToHex(topic)) as [
@@ -119,45 +83,18 @@ const onLaneFinished = (runtime: Runtime<Config>, log: EVMLog): string => {
   const decoded = decodeLaneFinished(log);
   const { roundId, laneId, finishTime } = decoded.args;
 
-  runtime.log(
-    `LaneFinished round=${roundId} lane=${laneId} finishTime=${finishTime}`,
-  );
-
-  const existingWinner = getWinnerLane(runtime, roundId);
-  const NO_LANE = 255; // type(uint8).max — matches LaneController.NO_LANE
-
-  if (existingWinner !== NO_LANE) {
-    const skipped = {
-      event: "LaneFinished",
-      action: "skipped",
-      reason: "winner-already-declared",
-      roundId: roundId.toString(),
-      existingWinner: existingWinner.toString(),
-    };
-    runtime.log(JSON.stringify(skipped));
-    return JSON.stringify(skipped);
-  }
-
-  const evmClient = createEvmClient(runtime.config);
-  const declareTx = writeLaneController(
-    runtime,
-    evmClient,
-    laneControllerAbi,
-    "declareWinner",
-    [roundId, laneId],
-  );
-
+  // recordHop auto-declares the first finisher and emits WinnerDeclared;
+  // settlement workflow handles distributePrizes + sweepUnclaimed.
   const result = {
     event: "LaneFinished",
-    action: "declareWinner",
+    action: "tracked",
     roundId: roundId.toString(),
     laneId: Number(laneId),
     finishTime: finishTime.toString(),
-    declareWinnerTx: declareTx,
     txHash: bytesToHex(log.txHash),
   };
 
-  runtime.log(`First finisher — winner declared: ${JSON.stringify(result)}`);
+  runtime.log(`LaneFinished: ${JSON.stringify(result)}`);
   return JSON.stringify(result);
 };
 

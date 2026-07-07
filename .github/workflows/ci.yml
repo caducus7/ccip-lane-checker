@@ -55,3 +55,34 @@ jobs:
 
       - name: Build
         run: npm run build
+
+  cre:
+    name: CRE typecheck
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: cre/lane-checker-cre
+    strategy:
+      matrix:
+        workflow:
+          - round-scheduler
+          - hop-sender
+          - hop-monitor
+          - settlement
+          - lane-benchmark
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.2.21"
+
+      - name: Install dependencies
+        run: bun install
+        working-directory: cre/lane-checker-cre/${{ matrix.workflow }}
+
+      - name: Typecheck
+        run: bun run typecheck
+        working-directory: cre/lane-checker-cre/${{ matrix.workflow }}
