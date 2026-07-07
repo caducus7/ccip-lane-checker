@@ -11,6 +11,8 @@ import {
 import { HopProgress } from "@/components/solo/HopProgress";
 import type { SupportedChainId } from "@/lib/chains";
 import { CHAIN_LABELS } from "@/lib/chains";
+import { DeploymentBanner } from "@/components/ui/EmptyState";
+import { TxFeedback } from "@/components/ui/TxFeedback";
 
 export function SoloGamePanel() {
   const [amount, setAmount] = useState("0.01");
@@ -20,8 +22,25 @@ export function SoloGamePanel() {
 
   const { data: balance } = useLaneTokenBalance();
   const { data: gameCounter } = useGameCounter();
-  const { deposit, startGame, isPending, isConfirming, isSuccess, isDeployed, hash } =
-    useLaneTokenActions();
+  const {
+    approveUnderlying,
+    deposit,
+    startGame,
+    isPending,
+    isConfirming,
+    isSuccess,
+    isDeployed,
+    hash,
+    error,
+    reset,
+    pendingAction,
+    lastCompletedAction,
+    needsApproval,
+  } = useLaneTokenActions();
+
+  const isTxBusy = isPending || isConfirming;
+  const insufficientAllowance = needsApproval(amount);
+  const needsDepositApproval = insufficientAllowance;
 
   const handleStart = () => {
     startGame(destChain, amount, maxHops);
@@ -31,10 +50,10 @@ export function SoloGamePanel() {
   };
 
   return (
-    <div className="grid gap-6 lg:grid-cols-2">
-      <div className="border border-grid bg-asphalt-50 p-5 sm:p-6 space-y-5">
+    <div className="grid gap-5 sm:gap-6 lg:grid-cols-2">
+      <div className="border border-grid bg-asphalt-50 p-4 sm:p-5 lg:p-6 space-y-5">
         <div>
-          <h2 className="font-display text-xl tracking-widest uppercase">
+          <h2 className="font-display text-lg sm:text-xl tracking-widest uppercase">
             Start <span className="text-neon-cyan">Challenge</span>
           </h2>
           <p className="mt-2 font-mono text-xs text-white/50 leading-relaxed">
@@ -44,40 +63,61 @@ export function SoloGamePanel() {
         </div>
 
         {!isDeployed && (
-          <div className="border border-neon-amber/40 bg-neon-amber/5 px-4 py-3 font-mono text-xs text-neon-amber">
-            LaneToken not deployed on this chain yet. Update{" "}
-            <code className="text-neon-cyan">contracts/deployments/testnet.json</code>.
-          </div>
+          <DeploymentBanner contractName="LaneToken" />
         )}
 
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="space-y-3">
           <label className="block">
             <span className="font-mono text-[10px] uppercase tracking-widest text-white/40">
-              Deposit (ETH)
+              Deposit amount (LINK)
             </span>
             <input
               type="text"
+              inputMode="decimal"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
-              className="mt-1 w-full border border-grid bg-asphalt px-3 py-2 font-mono text-sm text-white focus:border-neon-cyan outline-none"
+              disabled={!isDeployed || isTxBusy}
+              className="mt-1 w-full border border-grid bg-asphalt px-3 py-2.5 font-mono text-sm text-white focus:border-neon-cyan outline-none disabled:opacity-40"
             />
           </label>
-          <div className="flex items-end">
+
+          {isDeployed && needsDepositApproval && (
             <button
               type="button"
-              disabled={!isDeployed || isPending || isConfirming}
-              onClick={() => deposit(amount)}
-              className="w-full py-2 font-mono text-xs uppercase tracking-widest border border-grid hover:border-neon-cyan hover:text-neon-cyan transition-colors disabled:opacity-40"
+              disabled={isTxBusy}
+              onClick={() => approveUnderlying(amount)}
+              className="w-full py-3 font-mono text-xs sm:text-sm uppercase tracking-[0.2em] border border-neon-amber text-neon-amber hover:bg-neon-amber/10 transition-colors disabled:opacity-40"
             >
-              Deposit
+              {pendingAction === "approve" && isTxBusy
+                ? "Approving LINK…"
+                : `Approve ${amount} LINK to deposit`}
             </button>
-          </div>
+          )}
+
+          {isDeployed && !needsDepositApproval && (
+            <p className="font-mono text-[10px] text-neon-lime/80 uppercase tracking-wider">
+              ✓ LINK approved for deposit
+            </p>
+          )}
+
+          <button
+            type="button"
+            disabled={
+              !isDeployed || isTxBusy || needsDepositApproval
+            }
+            onClick={() => deposit(amount)}
+            className="w-full py-2.5 font-mono text-xs uppercase tracking-widest border border-grid hover:border-neon-cyan hover:text-neon-cyan transition-colors disabled:opacity-40"
+          >
+            {pendingAction === "deposit" && isTxBusy
+              ? "Depositing…"
+              : "Deposit to LaneToken"}
+          </button>
         </div>
 
         <p className="font-mono text-xs text-white/40">
           Balance:{" "}
           <span className="text-neon-cyan">
-            {balance !== undefined ? formatEther(balance) : "—"} ETH
+            {balance !== undefined ? formatEther(balance) : "—"} LINK
           </span>
         </p>
 
@@ -90,7 +130,8 @@ export function SoloGamePanel() {
           <select
             value={destChain}
             onChange={(e) => setDestChain(Number(e.target.value) as SupportedChainId)}
-            className="mt-1 w-full border border-grid bg-asphalt px-3 py-2 font-mono text-sm text-white focus:border-neon-cyan outline-none"
+            disabled={!isDeployed}
+            className="mt-1 w-full border border-grid bg-asphalt px-3 py-2.5 font-mono text-sm text-white focus:border-neon-cyan outline-none disabled:opacity-40"
           >
             <option value={sepolia.id}>{CHAIN_LABELS[sepolia.id]}</option>
             <option value={arbitrumSepolia.id}>
@@ -109,29 +150,37 @@ export function SoloGamePanel() {
             max={8}
             value={maxHops}
             onChange={(e) => setMaxHops(Number(e.target.value))}
-            className="mt-2 w-full accent-neon-cyan"
+            disabled={!isDeployed}
+            className="mt-2 w-full accent-neon-cyan disabled:opacity-40"
           />
         </label>
 
         <button
           type="button"
-          disabled={!isDeployed || isPending || isConfirming}
+          disabled={!isDeployed || isTxBusy}
           onClick={handleStart}
-          className="w-full py-3 font-mono text-sm uppercase tracking-[0.2em] bg-neon-cyan text-asphalt font-bold hover:shadow-[0_0_24px_rgba(0,245,212,0.35)] transition-shadow disabled:opacity-40"
+          className="w-full py-3 font-mono text-xs sm:text-sm uppercase tracking-[0.2em] bg-neon-cyan text-asphalt font-bold hover:shadow-[0_0_24px_rgba(0,245,212,0.35)] transition-shadow disabled:opacity-40"
         >
-          {isPending || isConfirming ? "Confirming…" : "Start Race"}
+          {pendingAction === "start" && isTxBusy
+            ? "Starting race…"
+            : "Start Race"}
         </button>
 
-        {hash && (
-          <p className="font-mono text-[10px] text-white/40 break-all">
-            Tx: {hash}
-          </p>
-        )}
-        {isSuccess && (
-          <p className="font-mono text-xs text-neon-lime">
-            Transaction confirmed. Watch hop progress →
-          </p>
-        )}
+        <TxFeedback
+          hash={hash}
+          error={error}
+          isSuccess={isSuccess}
+          successMessage={
+            lastCompletedAction === "approve"
+              ? "LINK approved — ready to deposit"
+              : lastCompletedAction === "deposit"
+                ? "Deposit confirmed"
+                : lastCompletedAction === "start"
+                  ? "Race started — watch hop progress →"
+                  : undefined
+          }
+          onDismiss={reset}
+        />
       </div>
 
       <HopProgress gameId={activeGameId ?? gameCounter} />

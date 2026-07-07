@@ -121,6 +121,21 @@ export function isDeployed(address: Address | undefined): boolean {
   return !!address && address !== ZERO;
 }
 
+export function isChainDeployed(chainId: number): boolean {
+  const deployment = getDeploymentByChainId(chainId);
+  if (!deployment) return false;
+  return (
+    isDeployed(deployment.laneController) || isDeployed(deployment.laneToken)
+  );
+}
+
+export function hasAnyDeployment(): boolean {
+  return Object.values(deployments.chains).some(
+    (chain) =>
+      isDeployed(chain.laneController) || isDeployed(chain.laneToken)
+  );
+}
+
 /** Minimal ABI for LaneToken solo mode */
 export const laneTokenAbi = parseAbi([
   "function deposit(uint256 amount) external",

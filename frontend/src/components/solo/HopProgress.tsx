@@ -1,15 +1,20 @@
 "use client";
 
 import { formatEther } from "viem";
+import { useAccount } from "wagmi";
 import { useGameRound } from "@/hooks/useLaneToken";
-import { ccipExplorerMessageUrl } from "@/lib/ccip";
+import { buildCcipExplorerMessageUrl } from "@/lib/ccip";
+import { chainIdToSelector } from "@/lib/chains";
+import type { SupportedChainId } from "@/lib/chains";
 import { LaneRaceViz } from "@/components/race/LaneRaceViz";
+import { Skeleton } from "@/components/ui/Skeleton";
 
 interface HopProgressProps {
   gameId: bigint | undefined;
 }
 
 export function HopProgress({ gameId }: HopProgressProps) {
+  const { chainId } = useAccount();
   const { data: round, isLoading, isError } = useGameRound(gameId);
 
   if (!gameId) {
@@ -23,9 +28,7 @@ export function HopProgress({ gameId }: HopProgressProps) {
   }
 
   if (isLoading) {
-    return (
-      <div className="border border-grid bg-asphalt-50 p-6 animate-pulse min-h-[280px]" />
-    );
+    return <Skeleton className="min-h-[280px] w-full border border-grid" />;
   }
 
   if (isError || !round) {
@@ -51,6 +54,14 @@ export function HopProgress({ gameId }: HopProgressProps) {
   ] = round;
 
   const progress = maxHops > 0 ? (hopsCompleted / maxHops) * 100 : 0;
+  const sourceSelector =
+    chainId !== undefined
+      ? chainIdToSelector(chainId as SupportedChainId)
+      : 0n;
+  const explorerUrl = buildCcipExplorerMessageUrl(
+    sourceSelector,
+    "0x" + "0".repeat(64)
+  );
 
   return (
     <div className="space-y-4">
@@ -89,7 +100,7 @@ export function HopProgress({ gameId }: HopProgressProps) {
             <dt className="text-white/40">Explorer</dt>
             <dd>
               <a
-                href={ccipExplorerMessageUrl("0x" + "0".repeat(64))}
+                href={explorerUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-neon-cyan/70 hover:text-neon-cyan"

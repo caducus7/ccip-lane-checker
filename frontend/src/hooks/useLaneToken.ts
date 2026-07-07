@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import {
   useAccount,
   useReadContract,
@@ -17,6 +18,9 @@ import {
 import { chainIdToSelector } from "@/lib/chains";
 import type { SupportedChainId } from "@/lib/chains";
 import { useTokenDecimals } from "@/hooks/useTokenDecimals";
+import { useTokenAllowance } from "@/hooks/useTokenAllowance";
+
+export type LaneTokenAction = "approve" | "deposit" | "start" | null;
 
 export function useLaneTokenBalance() {
   const { address, chainId } = useAccount();
@@ -70,12 +74,38 @@ export function useLaneTokenActions() {
   const deployment = chainId ? getDeploymentByChainId(chainId) : undefined;
   const underlyingToken = deployment?.underlyingToken;
   const { data: decimals } = useTokenDecimals(underlyingToken);
+  const { data: allowance, refetch: refetchAllowance } = useTokenAllowance(
+    underlyingToken,
+    laneToken
+  );
+
+  const [pendingAction, setPendingAction] = useState<LaneTokenAction>(null);
+  const [lastCompletedAction, setLastCompletedAction] =
+    useState<LaneTokenAction>(null);
+
   const { writeContract, data: hash, isPending, error, reset } =
     useWriteContract();
 
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({
     hash,
   });
+
+  useEffect(() => {
+    if (isSuccess && pendingAction) {
+      setLastCompletedAction(pendingAction);
+      refetchAllowance();
+      setPendingAction(null);
+    }
+  }, [isSuccess, pendingAction, refetchAllowance]);
+
+  const needsApproval = (amount: string): boolean => {
+    if (decimals === undefined || allowance === undefined) return true;
+    try {
+      return allowance < parseUnits(amount, decimals);
+    } catch {
+      return true;
+    }
+  };
 
   const approveUnderlying = (amount: string) => {
     if (
@@ -86,6 +116,7 @@ export function useLaneTokenActions() {
     ) {
       return;
     }
+    setPendingAction("approve");
     writeContract({
       address: underlyingToken,
       abi: erc20Abi,
@@ -96,6 +127,7 @@ export function useLaneTokenActions() {
 
   const deposit = (amount: string) => {
     if (!laneToken || !isDeployed(laneToken) || decimals === undefined) return;
+    setPendingAction("deposit");
     writeContract({
       address: laneToken,
       abi: laneTokenAbi,
@@ -110,6 +142,7 @@ export function useLaneTokenActions() {
     maxHops: number
   ) => {
     if (!laneToken || !isDeployed(laneToken) || decimals === undefined) return;
+    setPendingAction("start");
     writeContract({
       address: laneToken,
       abi: laneTokenAbi,
@@ -122,6 +155,12 @@ export function useLaneTokenActions() {
     });
   };
 
+  const clearActionState = () => {
+    reset();
+    setPendingAction(null);
+    setLastCompletedAction(null);
+  };
+
   return {
     approveUnderlying,
     deposit,
@@ -131,7 +170,11 @@ export function useLaneTokenActions() {
     isConfirming,
     isSuccess,
     error,
-    reset,
+    reset: clearActionState,
+    pendingAction,
+    lastCompletedAction,
+    needsApproval,
+    allowance,
     isDeployed: isDeployed(laneToken),
     decimals,
   };

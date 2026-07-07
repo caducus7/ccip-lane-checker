@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import {
   useAccount,
   useReadContract,
@@ -15,6 +16,9 @@ import {
   laneControllerAbi,
 } from "@/lib/contracts";
 import { useTokenDecimals } from "@/hooks/useTokenDecimals";
+import { useTokenAllowance } from "@/hooks/useTokenAllowance";
+
+export type LaneControllerAction = "approve" | "buy" | "claim" | null;
 
 export function useRoundCounter() {
   const { chainId } = useAccount();
@@ -101,6 +105,14 @@ export function useLaneControllerActions() {
   const deployment = chainId ? getDeploymentByChainId(chainId) : undefined;
   const bettingToken = deployment?.underlyingToken;
   const { data: decimals } = useTokenDecimals(bettingToken);
+  const { data: allowance, refetch: refetchAllowance } = useTokenAllowance(
+    bettingToken,
+    controller
+  );
+
+  const [pendingAction, setPendingAction] = useState<LaneControllerAction>(null);
+  const [lastCompletedAction, setLastCompletedAction] =
+    useState<LaneControllerAction>(null);
 
   const { writeContract, data: hash, isPending, error, reset } =
     useWriteContract();
@@ -108,6 +120,23 @@ export function useLaneControllerActions() {
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({
     hash,
   });
+
+  useEffect(() => {
+    if (isSuccess && pendingAction) {
+      setLastCompletedAction(pendingAction);
+      refetchAllowance();
+      setPendingAction(null);
+    }
+  }, [isSuccess, pendingAction, refetchAllowance]);
+
+  const needsApproval = (amount: string): boolean => {
+    if (decimals === undefined || allowance === undefined) return true;
+    try {
+      return allowance < parseUnits(amount, decimals);
+    } catch {
+      return true;
+    }
+  };
 
   const approveBettingToken = (amount: string) => {
     if (
@@ -118,6 +147,7 @@ export function useLaneControllerActions() {
     ) {
       return;
     }
+    setPendingAction("approve");
     writeContract({
       address: bettingToken,
       abi: erc20Abi,
@@ -134,6 +164,7 @@ export function useLaneControllerActions() {
     if (!controller || !isDeployed(controller) || decimals === undefined) {
       return;
     }
+    setPendingAction("buy");
     writeContract({
       address: controller,
       abi: laneControllerAbi,
@@ -144,12 +175,19 @@ export function useLaneControllerActions() {
 
   const claimPrize = (roundId: bigint) => {
     if (!controller || !isDeployed(controller)) return;
+    setPendingAction("claim");
     writeContract({
       address: controller,
       abi: laneControllerAbi,
       functionName: "claimPrize",
       args: [roundId],
     });
+  };
+
+  const clearActionState = () => {
+    reset();
+    setPendingAction(null);
+    setLastCompletedAction(null);
   };
 
   return {
@@ -161,7 +199,11 @@ export function useLaneControllerActions() {
     isConfirming,
     isSuccess,
     error,
-    reset,
+    reset: clearActionState,
+    pendingAction,
+    lastCompletedAction,
+    needsApproval,
+    allowance,
     isDeployed: isDeployed(controller),
     bettingToken,
     decimals,

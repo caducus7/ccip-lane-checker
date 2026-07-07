@@ -1,7 +1,67 @@
-import { LANE_BENCHMARKS, healthColor } from "@/lib/lane-data";
+"use client";
+
+import { useEffect, useState } from "react";
+
+import type { BenchmarkSnapshot } from "@/lib/benchmark-types";
+import {
+  LANE_BENCHMARKS,
+  healthColor,
+  type LaneBenchmark,
+} from "@/lib/lane-data";
 import { ccipExplorerHome } from "@/lib/ccip";
+import { snapshotToLaneBenchmarks } from "@/lib/snapshot-to-lanes";
+
+type DataSource = "loading" | "cache" | "static";
 
 export function LaneBenchmarkDashboard() {
+  const [lanes, setLanes] = useState<LaneBenchmark[]>(LANE_BENCHMARKS);
+  const [source, setSource] = useState<DataSource>("loading");
+  const [fetchedAt, setFetchedAt] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadBenchmarks() {
+      try {
+        const res = await fetch("/api/lanes", { cache: "no-store" });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+        const data = (await res.json()) as {
+          snapshot: BenchmarkSnapshot | null;
+          source: "cache" | "empty";
+        };
+
+        if (cancelled) return;
+
+        if (data.snapshot?.lanes?.length) {
+          setLanes(snapshotToLaneBenchmarks(data.snapshot));
+          setFetchedAt(data.snapshot.fetchedAt);
+          setSource("cache");
+        } else {
+          setLanes(LANE_BENCHMARKS);
+          setSource("static");
+        }
+      } catch {
+        if (!cancelled) {
+          setLanes(LANE_BENCHMARKS);
+          setSource("static");
+        }
+      }
+    }
+
+    void loadBenchmarks();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const sourceLabel =
+    source === "loading"
+      ? "Loading lane metrics…"
+      : source === "cache"
+        ? `Live CCIP cache${fetchedAt ? ` · ${formatTimestamp(fetchedAt)}` : ""}`
+        : "Static placeholder — CRE lane-benchmark will POST to /api/lanes";
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-end sm:justify-between gap-4">
@@ -13,28 +73,29 @@ export function LaneBenchmarkDashboard() {
             Lane <span className="text-neon-cyan">Benchmarks</span>
           </h1>
         </div>
-        <p className="font-mono text-xs text-white/40 max-w-sm">
-          Placeholder data — CRE lane-benchmark workflow will feed live p50/p95
-          latency, fees, and success rates.
-        </p>
+        <p className="font-mono text-xs text-white/40 max-w-sm">{sourceLabel}</p>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {LANE_BENCHMARKS.map((lane) => (
+        {lanes.map((lane) => (
           <LaneCard key={lane.id} lane={lane} />
         ))}
       </div>
 
-      <HeatmapTable />
+      <HeatmapTable lanes={lanes} />
     </div>
   );
 }
 
-function LaneCard({
-  lane,
-}: {
-  lane: (typeof LANE_BENCHMARKS)[number];
-}) {
+function formatTimestamp(iso: string): string {
+  try {
+    return new Date(iso).toLocaleString();
+  } catch {
+    return iso;
+  }
+}
+
+function LaneCard({ lane }: { lane: LaneBenchmark }) {
   const barWidth = Math.min(100, (lane.p50LatencySec / 120) * 100);
 
   return (
@@ -58,7 +119,10 @@ function LaneCard({
       <div className="mt-4 space-y-2">
         <MetricRow label="p50" value={`${lane.p50LatencySec}s`} />
         <MetricRow label="p95" value={`${lane.p95LatencySec}s`} />
-        <MetricRow label="Fee" value={`$${lane.feeUsd.toFixed(2)}`} />
+        <MetricRow
+          label="Fee"
+          value={lane.feeUsd > 0 ? `$${lane.feeUsd.toFixed(2)}` : "—"}
+        />
         <MetricRow label="Success" value={`${lane.successRate}%`} />
       </div>
 
@@ -81,7 +145,7 @@ function MetricRow({ label, value }: { label: string; value: string }) {
   );
 }
 
-function HeatmapTable() {
+function HeatmapTable({ lanes }: { lanes: LaneBenchmark[] }) {
   return (
     <div className="border border-grid overflow-x-auto">
       <table className="w-full min-w-[720px]">
@@ -96,7 +160,7 @@ function HeatmapTable() {
           </tr>
         </thead>
         <tbody>
-          {LANE_BENCHMARKS.map((lane) => (
+          {lanes.map((lane) => (
             <tr
               key={lane.id}
               className="border-b border-grid/60 hover:bg-asphalt-50/30"
