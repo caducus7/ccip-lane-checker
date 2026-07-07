@@ -33,6 +33,7 @@ contract LaneExecutor is CCIPReceiver, Ownable, Pausable, ILaneExecutor, IReceiv
 
     mapping(uint64 => address) public remoteExecutors;
     mapping(address => bool) public hopSenders;
+    mapping(bytes32 => bool) private s_deliveredMessageIds;
 
     event HopSent(
         bytes32 indexed messageId, uint256 indexed roundId, uint8 indexed laneId, uint64 destChainSelector
@@ -52,6 +53,7 @@ contract LaneExecutor is CCIPReceiver, Ownable, Pausable, ILaneExecutor, IReceiv
     error ControllerMismatch();
     error HomeControllerPaused();
     error InsufficientCcipFee(uint256 required, uint256 available);
+    error DuplicateMessage(bytes32 messageId);
 
     uint256 public constant MAX_CLOCK_SKEW = 15 minutes;
 
@@ -150,6 +152,9 @@ contract LaneExecutor is CCIPReceiver, Ownable, Pausable, ILaneExecutor, IReceiv
 
     function _ccipReceive(Client.Any2EVMMessage memory message) internal override whenNotPaused {
         if (canonicalController == address(0)) revert HomeConfigNotSet();
+        if (message.messageId == bytes32(0)) revert DuplicateMessage(message.messageId);
+        if (s_deliveredMessageIds[message.messageId]) revert DuplicateMessage(message.messageId);
+        s_deliveredMessageIds[message.messageId] = true;
 
         address expectedSender = remoteExecutors[message.sourceChainSelector];
         if (expectedSender == address(0)) revert UnknownSource(message.sourceChainSelector);

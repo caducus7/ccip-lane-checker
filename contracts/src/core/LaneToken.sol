@@ -83,6 +83,7 @@ contract LaneToken is CCIPReceiver, VRFConsumerBaseV2Plus {
     error InsufficientCcipFee(uint256 required, uint256 available);
     error UnwiredRemoteLaneToken(uint64 chainSelector);
     error DuplicateMessage(bytes32 messageId);
+    error BridgeCustodyMismatch();
 
     uint8 public constant MAX_HOPS = 16;
     uint256 public constant GAME_ABANDON_TIMEOUT = 7 days;
@@ -152,6 +153,9 @@ contract LaneToken is CCIPReceiver, VRFConsumerBaseV2Plus {
     function startGame(uint64 destinationChainSelector, uint256 amount, uint8 maxHops) external returns (bytes32 messageId) {
         if (amount == 0) revert InvalidAmount();
         if (maxHops == 0 || maxHops > MAX_HOPS) revert InvalidMaxHops();
+        if (remoteLaneTokens[destinationChainSelector] == address(0)) {
+            revert UnwiredRemoteLaneToken(destinationChainSelector);
+        }
         require(s_balances[msg.sender] >= amount, "Insufficient balance");
         s_balances[msg.sender] -= amount;
         s_totalBooked -= amount;
@@ -244,6 +248,11 @@ contract LaneToken is CCIPReceiver, VRFConsumerBaseV2Plus {
 
     function _recordHop(uint256 gameId, HopPayload memory payload, uint64 sourceSelector) internal {
         GameRound storage round = s_gameRounds[gameId];
+        if (!round.isActive && round.tokensBridgedOut && round.hopCount < round.maxHops) {
+            round.isActive = true;
+            round.tokensBridgedOut = false;
+            s_tokensInPlay += round.amount;
+        }
         require(round.isActive, "Game is not active");
         round.lastSendTime = block.timestamp;
 
@@ -380,7 +389,7 @@ contract LaneToken is CCIPReceiver, VRFConsumerBaseV2Plus {
 
         uint256 balanceAfter = i_underlyingToken.balanceOf(address(this));
         if (balanceBefore < balanceAfter || balanceBefore - balanceAfter < amount) {
-            return messageId;
+            revert BridgeCustodyMismatch();
         }
 
         GameRound storage round = s_gameRounds[gameId];

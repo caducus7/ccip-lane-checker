@@ -49,6 +49,8 @@ contract LaneController is LaneControllerPausable, ILaneController, IReceiver, R
         bool prizesDistributed;
         bool claimsSwept;
         uint48 settledAt;
+        uint48 claimWindowSnapshot;
+        uint48 runnerUpSettlementTimeoutSnapshot;
         uint256 totalPrizePool;
         uint256 winnerShare;
         uint256 runnerUpShare;
@@ -172,7 +174,7 @@ contract LaneController is LaneControllerPausable, ILaneController, IReceiver, R
     }
 
     /// @inheritdoc IReceiver
-    function onReport(bytes calldata, bytes calldata report) external whenNotPaused {
+    function onReport(bytes calldata, bytes calldata report) external whenNotPaused nonReentrant {
         if (msg.sender != creForwarder) revert NotAuthorized();
         CreReportAuth.assertLaneControllerReport(report);
         bytes4 selector = bytes4(report[:4]);
@@ -280,6 +282,7 @@ contract LaneController is LaneControllerPausable, ILaneController, IReceiver, R
             if (!round.winnerDeclared) {
                 round.winningLaneId = laneId;
                 round.winnerDeclared = true;
+                round.runnerUpSettlementTimeoutSnapshot = runnerUpSettlementTimeout;
                 round.state = RoundState.Finished;
                 emit WinnerDeclared(roundId, laneId, lane.finishTime);
             } else if (round.runnerUpLaneId == NO_LANE) {
@@ -315,6 +318,7 @@ contract LaneController is LaneControllerPausable, ILaneController, IReceiver, R
         round.prizesDistributed = true;
         round.state = RoundState.Settled;
         round.settledAt = uint48(block.timestamp);
+        round.claimWindowSnapshot = claimWindow;
 
         PrizeCalculator.Payout memory payout = PrizeCalculator.calculate(round.totalPrizePool);
 
@@ -435,7 +439,7 @@ contract LaneController is LaneControllerPausable, ILaneController, IReceiver, R
         if (!round.prizesDistributed) revert NotSettled();
         if (round.claimsSwept) revert ClaimsSwept();
 
-        if (block.timestamp < round.settledAt + claimWindow) revert ClaimWindowActive();
+        if (block.timestamp < round.settledAt + round.claimWindowSnapshot) revert ClaimWindowActive();
 
         uint256 winnerShare = round.winnerShare;
         uint256 runnerUpShare = round.runnerUpShare;
@@ -456,7 +460,7 @@ contract LaneController is LaneControllerPausable, ILaneController, IReceiver, R
         uint8 winner = round.winningLaneId;
         if (winner == NO_LANE) return false;
 
-        uint256 deadline = round.lanes[winner].finishTime + runnerUpSettlementTimeout;
+        uint256 deadline = round.lanes[winner].finishTime + round.runnerUpSettlementTimeoutSnapshot;
         bool timedOut = block.timestamp > deadline;
 
         for (uint8 i = 0; i < round.laneCount; ++i) {
