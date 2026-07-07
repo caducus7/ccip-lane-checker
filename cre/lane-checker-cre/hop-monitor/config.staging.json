@@ -1,0 +1,10 @@
+{
+  "laneControllerAddress": "0x0000000000000000000000000000000000000001",
+  "controllerChainSelectorName": "ethereum-testnet-sepolia",
+  "gasLimit": "500000",
+  "chains": [
+    { "chainSelectorName": "ethereum-testnet-sepolia" },
+    { "chainSelectorName": "ethereum-testnet-sepolia-arbitrum-1" },
+    { "chainSelectorName": "ethereum-testnet-sepolia-base-1" }
+  ]
+}

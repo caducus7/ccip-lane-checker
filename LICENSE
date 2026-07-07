@@ -1,0 +1,60 @@
+Caducus Source Available License 1.0
+Copyright (c) 2026 caducus7. All rights reserved.
+
+This license applies to all files in this repository except third-party
+dependencies (for example, under contracts/lib/, node_modules/, and vendored
+Chainlink/OpenZeppelin packages), which remain under their respective
+licenses.
+
+1. Definitions
+
+   "Software" means the CCIP Lane Checker codebase in this repository,
+   including smart contracts, CRE workflows, frontend, documentation, and
+   deployment tooling.
+
+   "Commercial Use" means any use of the Software, or a product or service
+   substantially derived from it, for revenue generation, paid access,
+   white-label deployment, hosted operation for third parties, or sale of
+   licenses, subscriptions, or support.
+
+2. Grants
+
+   You may, without a separate commercial agreement:
+
+   - View, fork, and modify the Software for personal, educational, or
+     internal evaluation purposes.
+   - Run the Software on testnets or private networks for development and
+     demonstration.
+   - Submit contributions back to the upstream repository.
+
+3. Restrictions
+
+   Without a written commercial license from the copyright holder, you may
+   not:
+
+   - Use the Software for Commercial Use in production.
+   - Offer the Software, or a substantially similar competing product, as a
+     hosted service or managed offering to third parties.
+   - Remove or alter this license notice from distributed copies of the
+     Software.
+
+4. Commercial licensing
+
+   Commercial licenses, OEM arrangements, and custom support are available.
+   Contact: https://github.com/caducus7
+
+5. No warranty
+
+   THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+   OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+   FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL
+   THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+   LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
+   FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS
+   IN THE SOFTWARE.
+
+6. Trademarks
+
+   "CCIP Lane Checker" and related branding are not granted under this
+   license. Chainlink, CCIP, CRE, and VRF are trademarks of their respective
+   owners.

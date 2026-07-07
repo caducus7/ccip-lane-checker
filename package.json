@@ -1,0 +1,13 @@
+{
+  "name": "ccip-lane-checker",
+  "private": true,
+  "description": "Gamified CCIP lane benchmarking monorepo",
+  "scripts": {
+    "test": "cd contracts && forge test",
+    "build:contracts": "cd contracts && forge build",
+    "build:frontend": "cd frontend && npm run build"
+  },
+  "workspaces": [
+    "frontend"
+  ]
+}

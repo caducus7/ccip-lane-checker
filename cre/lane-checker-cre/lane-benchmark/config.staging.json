@@ -1,0 +1,18 @@
+{
+  "schedule": "0 */5 * * * *",
+  "ccipApiBaseUrl": "https://api.ccip.chain.link/v2",
+  "cacheKey": "lane-benchmark-cache",
+  "authorizedKeys": [],
+  "lanes": [
+    {
+      "label": "sepolia-to-arbitrum-sepolia",
+      "sourceChainSelector": "16015286601757825753",
+      "destChainSelector": "3478487238524512106"
+    },
+    {
+      "label": "sepolia-to-base-sepolia",
+      "sourceChainSelector": "16015286601757825753",
+      "destChainSelector": "10344971235874465080"
+    }
+  ]
+}

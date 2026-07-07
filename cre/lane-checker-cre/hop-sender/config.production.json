@@ -1,0 +1,10 @@
+{
+  "schedule": "0 * * * * * *",
+  "laneControllerAddress": "0x0000000000000000000000000000000000000001",
+  "controllerChainSelectorName": "ethereum-testnet-sepolia",
+  "laneExecutorAddress": "0x0000000000000000000000000000000000000002",
+  "executorChainSelectorName": "ethereum-testnet-sepolia",
+  "laneCount": 2,
+  "isOriginChain": true,
+  "gasLimit": "500000"
+}

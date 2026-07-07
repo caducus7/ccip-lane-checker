@@ -1,0 +1,17 @@
+{
+  "name": "lane-benchmark",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "postinstall": "bunx cre-setup"
+  },
+  "dependencies": {
+    "@chainlink/cre-sdk": "^1.14.0",
+    "zod": "^3.25.67"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3"
+  }
+}

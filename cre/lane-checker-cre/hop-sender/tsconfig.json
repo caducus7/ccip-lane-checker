@@ -1,0 +1,24 @@
+{
+  "compilerOptions": {
+    "target": "esnext",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "lib": ["ESNext"],
+    "outDir": "./dist",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "types": [],
+    "paths": {
+      "@chainlink/cre-sdk": ["./node_modules/@chainlink/cre-sdk"]
+    }
+  },
+  "include": [
+    "main.ts",
+    "lane-controller-abi.ts",
+    "lane-executor-abi.ts",
+    "evm-write.ts",
+    "controller-read.ts"
+  ]
+}

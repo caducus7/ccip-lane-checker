@@ -1,0 +1,17 @@
+{
+  "name": "hop-sender",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "postinstall": "bunx cre-setup"
+  },
+  "dependencies": {
+    "@chainlink/cre-sdk": "^1.14.0",
+    "viem": "^2.31.0"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3"
+  }
+}

@@ -1,0 +1,28 @@
+.env
+.env.*
+!.env.example
+
+# Foundry
+contracts/cache/
+contracts/out/
+contracts/broadcast/
+
+# Stray clone leftovers at repo root (safe to delete manually)
+/lib/
+
+# Node
+node_modules/
+.next/
+dist/
+.turbo/
+
+# CRE
+cre/**/node_modules/
+cre/**/.cre/
+
+# IDE
+.idea/
+.vscode/
+
+# OS
+.DS_Store
