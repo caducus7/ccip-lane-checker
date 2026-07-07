@@ -32,8 +32,9 @@ Frontend               → claimPrize (pull payout)
 3. **`recordHop` auto-declares** first finisher; CRE `declareWinner` is fallback only.
 4. **CRE writes** go through `onReport` on LaneController and LaneExecutor (Keystone forwarder as `creForwarder`). Selectors are allowlisted via `CreReportAuth`; `whenNotPaused` applies on controller.
 5. **Hop sends** via `LaneExecutor.sendHop` — CRE uses `writeReport` → `onReport` (allowlisted `sendHop` only) or direct `hopSender` calls.
-6. **`recordHop` accepts `sendTime`** — latency is derived on-chain (`block.timestamp - sendTime`, capped at 30 days).
-7. **`sweepUnclaimed(roundId)`** — CRE/owner can recover unclaimed winner/runner-up shares after settlement.
+6. **`recordHop` accepts `sendTime`** — latency is derived on-chain (`block.timestamp - sendTime`, capped at 30 days). `chainSelector` must match `lane.chainPath[hopsCompleted]`; `LaneExecutor` encodes the destination chain in the CCIP message as a 4-tuple `(roundId, laneId, hopChainSelector, sendTime)`.
+7. **`sweepUnclaimed(roundId)`** — CRE/owner can recover unclaimed winner/runner-up shares after settlement. **Do not** call from `settlement` immediately after `distributePrizes` — bettors need time to `claimPrize` first; use a delayed CRON if automated.
+8. **`round-orchestrator` removed** — hop sends are owned by `hop-sender`; settlement only calls `distributePrizes` on `WinnerDeclared`.
 
 ## Security hardening (applied)
 
@@ -44,8 +45,16 @@ Frontend               → claimPrize (pull payout)
 | `recordHop` trusted latency param | On-chain derivation from `sendTime` |
 | Claim rounding dust | `winnerShareClaimed` / `runnerUpShareClaimed` + `sweepUnclaimed` |
 | Missing hop orchestration | `hop-sender` CRE workflow (CRON initial + `HopReceived` continuation) |
+| `recordHop` wrong-chain hops | Path validation vs `lane.chainPath[hopsCompleted]`; executor passes `hopChainSelector` in message data |
+| Premature prize sweep | `settlement` no longer calls `sweepUnclaimed` right after `distributePrizes` |
+
+## Test status
+
+**33/33** `forge test` passing (unit + Chainlink Local integration). Path-aware `_finishLane` in `LaneController.t.sol` aligns with executor 4-tuple encoding.
 
 ## Post-deploy checklist
+
+See **`docs/DEPLOY_TESTNET.md`** for phased `DeployAll.s.sol` commands (deploy → peer wiring).
 
 - [ ] Fill `contracts/deployments/testnet.json` per chain
 - [ ] Update each CRE workflow `config.staging.json` with controller + executor addresses
