@@ -66,6 +66,7 @@ contract LaneToken is CCIPReceiver, VRFConsumerBaseV2Plus {
     event Deposited(address indexed user, uint256 amount);
     event Withdrawn(address indexed user, uint256 amount);
     event NextHopRequested(uint256 indexed requestId);
+    event GameAbandoned(uint256 indexed gameId, address indexed initiator, uint256 amount);
 
     error NotAdmin();
     error UnknownSource(uint64 sourceChainSelector);
@@ -73,7 +74,13 @@ contract LaneToken is CCIPReceiver, VRFConsumerBaseV2Plus {
     error InvalidZeroAddress();
     error GameMismatch();
     error InsufficientLiquidity();
+    error InvalidMaxHops();
+    error GameNotAbandonable();
+    error NotInitiator();
+    error InsufficientCcipFee(uint256 required, uint256 available);
 
+    uint8 public constant MAX_HOPS = 16;
+    uint256 public constant GAME_ABANDON_TIMEOUT = 7 days;
     uint256 public constant MAX_CLOCK_SKEW = 15 minutes;
 
     modifier onlyAdmin() {
@@ -135,6 +142,7 @@ contract LaneToken is CCIPReceiver, VRFConsumerBaseV2Plus {
     }
 
     function startGame(uint64 destinationChainSelector, uint256 amount, uint8 maxHops) external returns (bytes32 messageId) {
+        if (maxHops == 0 || maxHops > MAX_HOPS) revert InvalidMaxHops();
         require(s_balances[msg.sender] >= amount, "Insufficient balance");
         s_balances[msg.sender] -= amount;
         s_totalBooked -= amount;
@@ -163,6 +171,20 @@ contract LaneToken is CCIPReceiver, VRFConsumerBaseV2Plus {
         s_messageIdToGameId[messageId] = gameId;
 
         emit GameRoundStarted(gameId, msg.sender, amount, maxHops);
+    }
+
+    /// @notice Refund a stuck game after no hop progress for `GAME_ABANDON_TIMEOUT`.
+    function abandonGame(uint256 gameId) external {
+        GameRound storage round = s_gameRounds[gameId];
+        if (!round.isActive) revert GameNotAbandonable();
+        if (msg.sender != round.initiator) revert NotInitiator();
+        if (block.timestamp <= round.lastSendTime + GAME_ABANDON_TIMEOUT) revert GameNotAbandonable();
+
+        round.isActive = false;
+        s_tokensInPlay -= round.amount;
+        s_balances[round.initiator] += round.amount;
+        s_totalBooked += round.amount;
+        emit GameAbandoned(gameId, round.initiator, round.amount);
     }
 
     struct HopPayload {
@@ -322,6 +344,7 @@ contract LaneToken is CCIPReceiver, VRFConsumerBaseV2Plus {
         });
 
         uint256 fee = s_router.getFee(destinationChainSelector, message);
+        if (address(this).balance < fee) revert InsufficientCcipFee(fee, address(this).balance);
         messageId = s_router.ccipSend{value: fee}(destinationChainSelector, message);
         emit BridgeStarted(messageId, destinationChainSelector, amount);
     }

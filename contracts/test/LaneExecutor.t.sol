@@ -15,6 +15,10 @@ contract MockCanonicalController {
     uint64 public lastChainSelector;
     uint256 public lastSendTime;
 
+    function paused() external pure returns (bool) {
+        return false;
+    }
+
     function recordHop(uint256 roundId, uint8 laneId, uint64 chainSelector, uint256 sendTime) external {
         recordHopCalls++;
         lastRoundId = roundId;
@@ -141,5 +145,11 @@ contract LaneExecutorTest is Test {
         vm.prank(stranger);
         vm.expectRevert(LaneExecutor.NotAuthorized.selector);
         executor.sendHop(roundId, 0, HOP_CHAIN);
+    }
+
+    function test_setHomeConfig_syncsLaneControllerOnHomeChain() public {
+        LaneExecutor fresh = new LaneExecutor(address(router), address(this));
+        fresh.setHomeConfig(LOCAL_SELECTOR, LOCAL_SELECTOR, address(controller), address(fresh));
+        assertEq(fresh.laneController(), address(controller));
     }
 }

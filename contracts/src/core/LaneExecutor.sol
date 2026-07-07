@@ -4,10 +4,12 @@ pragma solidity ^0.8.24;
 import {CCIPReceiver} from "@chainlink/contracts/src/v0.8/ccip/applications/CCIPReceiver.sol";
 import {Client} from "@chainlink/contracts/src/v0.8/ccip/libraries/Client.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {ICcipRouter} from "../interfaces/ICcipRouter.sol";
 import {ILaneExecutor} from "../interfaces/ILaneExecutor.sol";
 import {ILaneController} from "../interfaces/ILaneController.sol";
+import {IPausable} from "../interfaces/IPausable.sol";
 import {IReceiver} from "../interfaces/IReceiver.sol";
 import {CreReportAuth} from "../libraries/CreReportAuth.sol";
 
@@ -15,7 +17,7 @@ import {CreReportAuth} from "../libraries/CreReportAuth.sol";
 /// @notice Per-chain CCIP endpoint for parimutuel races: sends race legs to the next
 ///         chain in a lane circuit and relays received hops to the canonical
 ///         LaneController on the home (betting) chain.
-contract LaneExecutor is CCIPReceiver, Ownable, ILaneExecutor, IReceiver, ReentrancyGuard {
+contract LaneExecutor is CCIPReceiver, Ownable, Pausable, ILaneExecutor, IReceiver, ReentrancyGuard {
     ILaneController private s_laneController;
     ICcipRouter public immutable s_ccipRouter;
     address public creForwarder;
@@ -47,6 +49,9 @@ contract LaneExecutor is CCIPReceiver, Ownable, ILaneExecutor, IReceiver, Reentr
     error ZeroAddress();
     error HomeConfigNotSet();
     error InvalidSendTime();
+    error ControllerMismatch();
+    error HomeControllerPaused();
+    error InsufficientCcipFee(uint256 required, uint256 available);
 
     uint256 public constant MAX_CLOCK_SKEW = 15 minutes;
 
@@ -69,6 +74,7 @@ contract LaneExecutor is CCIPReceiver, Ownable, ILaneExecutor, IReceiver, Reentr
 
     function setLaneController(address controller) external onlyOwner {
         if (controller == address(0)) revert ZeroAddress();
+        if (canonicalController != address(0) && controller != canonicalController) revert ControllerMismatch();
         s_laneController = ILaneController(controller);
     }
 
@@ -84,6 +90,17 @@ contract LaneExecutor is CCIPReceiver, Ownable, ILaneExecutor, IReceiver, Reentr
         homeChainSelector = _homeChainSelector;
         canonicalController = _canonicalController;
         homeExecutor = _homeExecutor;
+        if (_localChainSelector == _homeChainSelector) {
+            s_laneController = ILaneController(_canonicalController);
+        }
+    }
+
+    function pause() external onlyOwner {
+        _pause();
+    }
+
+    function unpause() external onlyOwner {
+        _unpause();
     }
 
     function setRemoteExecutor(uint64 chainSelector, address executor) external onlyOwner {
@@ -110,6 +127,7 @@ contract LaneExecutor is CCIPReceiver, Ownable, ILaneExecutor, IReceiver, Reentr
     function sendHop(uint256 roundId, uint8 laneId, uint64 destChainSelector)
         external
         onlyHopSender
+        whenNotPaused
         returns (bytes32 messageId)
     {
         address destExecutor = remoteExecutors[destChainSelector];
@@ -123,12 +141,11 @@ contract LaneExecutor is CCIPReceiver, Ownable, ILaneExecutor, IReceiver, Reentr
             feeToken: address(0)
         });
 
-        uint256 fee = s_ccipRouter.getFee(destChainSelector, message);
-        messageId = s_ccipRouter.ccipSend{value: fee}(destChainSelector, message);
+        messageId = _ccipSend(destChainSelector, message);
         emit HopSent(messageId, roundId, laneId, destChainSelector);
     }
 
-    function _ccipReceive(Client.Any2EVMMessage memory message) internal override {
+    function _ccipReceive(Client.Any2EVMMessage memory message) internal override whenNotPaused {
         if (canonicalController == address(0)) revert HomeConfigNotSet();
 
         address expectedSender = remoteExecutors[message.sourceChainSelector];
@@ -145,6 +162,7 @@ contract LaneExecutor is CCIPReceiver, Ownable, ILaneExecutor, IReceiver, Reentr
         emit HopReceived(roundId, laneId, message.sourceChainSelector, latency);
 
         if (localChainSelector == homeChainSelector) {
+            if (IPausable(canonicalController).paused()) revert HomeControllerPaused();
             uint256 recorded = sendTime > block.timestamp ? block.timestamp : sendTime;
             ILaneController(canonicalController).recordHop(roundId, laneId, hopChainSelector, recorded);
         } else {
@@ -163,8 +181,16 @@ contract LaneExecutor is CCIPReceiver, Ownable, ILaneExecutor, IReceiver, Reentr
             feeToken: address(0)
         });
 
-        uint256 fee = s_ccipRouter.getFee(homeChainSelector, message);
-        bytes32 messageId = s_ccipRouter.ccipSend{value: fee}(homeChainSelector, message);
+        bytes32 messageId = _ccipSend(homeChainSelector, message);
         emit HopRelayed(messageId, roundId, laneId);
+    }
+
+    function _ccipSend(uint64 destChainSelector, Client.EVM2AnyMessage memory message)
+        internal
+        returns (bytes32 messageId)
+    {
+        uint256 fee = s_ccipRouter.getFee(destChainSelector, message);
+        if (address(this).balance < fee) revert InsufficientCcipFee(fee, address(this).balance);
+        messageId = s_ccipRouter.ccipSend{value: fee}(destChainSelector, message);
     }
 }

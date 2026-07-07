@@ -12,5 +12,7 @@ interface ILaneExecutor {
     ) external;
     function setRemoteExecutor(uint64 chainSelector, address executor) external;
     function setHopSender(address sender, bool allowed) external;
+    function pause() external;
+    function unpause() external;
     function sendHop(uint256 roundId, uint8 laneId, uint64 destChainSelector) external returns (bytes32 messageId);
 }
