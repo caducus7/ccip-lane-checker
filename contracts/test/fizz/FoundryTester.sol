@@ -93,11 +93,20 @@ contract FoundryTester is Test, Handlers {
         assertTrue(property_controllerTokenSolvency());
     }
 
-    function test_soloMultiHopVrf_propertyHolds() public {
+    function test_spokeRelayRace_propertiesHold() public {
         actor = actors[0];
-        laneToken_deposit(30e6);
-        laneToken_startGame(30e6, 2);
-        laneToken_fulfillVrf(1, 0);
-        assertTrue(property_laneTokenBookedSolvency());
+        controller_createRound(0);
+        controller_buyLaneTokens(0, 0, 100e6);
+        controller_startRace(0);
+        executor_finishRaceViaCcip(0);
+        assertTrue(property_controllerTokenSolvency());
+        assertGt(ghosts.executorHopsDelivered, 0);
+        assertEq(uint256(controller.getRoundState(1)), uint256(LaneController.RoundState.Finished));
+    }
+
+    function test_coverageRunAll_propertiesHold() public {
+        coverage_runAll(42);
+        assertTrue(property_allLaneTokensSolvent());
+        assertTrue(property_controllerTokenSolvency());
     }
 }

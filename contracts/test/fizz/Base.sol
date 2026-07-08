@@ -14,7 +14,6 @@ import {LaneController} from "../../src/core/LaneController.sol";
 import {LaneExecutor} from "../../src/core/LaneExecutor.sol";
 import {LaneToken} from "../../src/core/LaneToken.sol";
 import {MockERC20} from "../../src/mocks/MockERC20.sol";
-import {MockCCIPRouter} from "../../src/mocks/MockCCIPRouter.sol";
 import {MockDeliveringCCIPRouter} from "../../src/mocks/MockDeliveringCCIPRouter.sol";
 import {MockVRFCoordinatorV2Plus} from "../../src/mocks/MockVRFCoordinatorV2Plus.sol";
 import {Client} from "@chainlink/contracts/src/v0.8/ccip/libraries/Client.sol";
@@ -54,11 +53,13 @@ abstract contract Base is StringUtils, Clamp, Deployer, Math {
 
     LaneController internal controller;
     LaneExecutor internal executor;
+    LaneExecutor internal spokeExecutor;
     LaneToken internal laneToken;
     LaneToken internal originLaneToken;
     LaneToken internal remoteLaneToken;
     MockERC20 internal bettingToken;
-    MockCCIPRouter internal execRouter;
+    MockDeliveringCCIPRouter internal execRouter;
+    bool internal execRouterDelivers = true;
     MockDeliveringCCIPRouter internal soloRouter;
     MockVRFCoordinatorV2Plus internal vrfCoordinator;
 
@@ -106,17 +107,27 @@ abstract contract Base is StringUtils, Clamp, Deployer, Math {
         controller = new LaneController(admin, address(bettingToken), treasury, gasReserve, cre);
         controller.setRoundCooldown(0);
 
-        execRouter = new MockCCIPRouter();
+        execRouter = new MockDeliveringCCIPRouter();
+        execRouter.setMockFee(0);
         executor = new LaneExecutor(address(execRouter), admin);
         executor.setLaneController(address(controller));
         executor.setHomeConfig(HOME_SELECTOR, HOME_SELECTOR, address(controller), address(executor));
-        executor.setRemoteExecutor(HOP_CHAIN_A, address(executor));
         executor.setRemoteExecutor(HOP_CHAIN_B, address(executor));
+
+        spokeExecutor = new LaneExecutor(address(execRouter), admin);
+        spokeExecutor.setHomeConfig(HOP_CHAIN_A, HOME_SELECTOR, address(controller), address(executor));
+        spokeExecutor.setRemoteExecutor(HOME_SELECTOR, address(executor));
+        executor.setRemoteExecutor(HOP_CHAIN_A, address(spokeExecutor));
+        spokeExecutor.setHopSender(cre, true);
+        execRouter.setChainSelector(address(executor), HOME_SELECTOR);
+        execRouter.setChainSelector(address(spokeExecutor), HOP_CHAIN_A);
         executor.setHopSender(cre, true);
         controller.setHopRecorder(address(executor), true);
         vm.deal(address(executor), 100 ether);
+        vm.deal(address(spokeExecutor), 100 ether);
 
         soloRouter = new MockDeliveringCCIPRouter();
+        soloRouter.setMockFee(0);
         vrfCoordinator = new MockVRFCoordinatorV2Plus();
 
         uint256[] memory soloChains = new uint256[](1);
@@ -230,6 +241,27 @@ abstract contract Base is StringUtils, Clamp, Deployer, Math {
         paths[0][0] = HOP_CHAIN_A;
         paths[1] = new uint64[](1);
         paths[1][0] = HOP_CHAIN_B;
+    }
+
+    function _threeLanePaths() internal pure returns (uint64[][] memory paths) {
+        paths = new uint64[][](2);
+        paths[0] = new uint64[](3);
+        paths[0][0] = HOP_CHAIN_A;
+        paths[0][1] = HOP_CHAIN_B;
+        paths[0][2] = HOP_CHAIN_A;
+        paths[1] = new uint64[](3);
+        paths[1][0] = HOP_CHAIN_B;
+        paths[1][1] = HOP_CHAIN_A;
+        paths[1][2] = HOP_CHAIN_B;
+    }
+
+    function _forceFinishLaneWithoutWinner(uint256 roundId, uint8 laneId) internal {
+        (, , uint8 requiredHops,, ,) = controller.getLane(roundId, laneId);
+        bytes32 roundBase = keccak256(abi.encode(roundId, uint256(5)));
+        bytes32 laneBase = keccak256(abi.encode(laneId, uint256(roundBase) + 6));
+        uint256 laneMeta = uint256(requiredHops) | (uint256(requiredHops) << 8) | (uint256(1) << 16);
+        vm.store(address(controller), bytes32(uint256(laneBase) + 1), bytes32(laneMeta));
+        vm.store(address(controller), bytes32(uint256(laneBase) + 3), bytes32(block.timestamp));
     }
 
     function _trackRound(uint256 roundId) internal {

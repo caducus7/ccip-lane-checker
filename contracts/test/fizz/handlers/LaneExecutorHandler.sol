@@ -22,9 +22,13 @@ abstract contract LaneExecutorHandler is Properties {
         uint256 sendTime = block.timestamp - (chainSeed % 120);
 
         vm.startPrank(cre);
-        try executor.sendHop(roundId, laneId, hopChain) {} catch {}
+        try executor.sendHop(roundId, laneId, hopChain) {
+            if (execRouterDelivers) ghosts.executorHopsDelivered++;
+        } catch {}
         vm.stopPrank();
-        _deliverExecutorHop(roundId, laneId, hopChain, sendTime);
+        if (!execRouterDelivers) {
+            _deliverExecutorHop(roundId, laneId, hopChain, sendTime);
+        }
     }
 
     function executor_finishRaceViaCcip(uint256 roundId) public {
@@ -32,14 +36,22 @@ abstract contract LaneExecutorHandler is Properties {
         roundId = knownRoundIds[roundId % knownRoundIds.length];
 
         vm.startPrank(cre);
-        try executor.sendHop(roundId, 0, HOP_CHAIN_A) {} catch {}
+        try executor.sendHop(roundId, 0, HOP_CHAIN_A) {
+            if (execRouterDelivers) ghosts.executorHopsDelivered++;
+        } catch {}
         vm.stopPrank();
-        _deliverExecutorHop(roundId, 0, HOP_CHAIN_A, block.timestamp - 60);
+        if (!execRouterDelivers) {
+            _deliverExecutorHop(roundId, 0, HOP_CHAIN_A, block.timestamp - 60);
+        }
 
         vm.startPrank(cre);
-        try executor.sendHop(roundId, 1, HOP_CHAIN_B) {} catch {}
+        try executor.sendHop(roundId, 1, HOP_CHAIN_B) {
+            if (execRouterDelivers) ghosts.executorHopsDelivered++;
+        } catch {}
         vm.stopPrank();
-        _deliverExecutorHop(roundId, 1, HOP_CHAIN_B, block.timestamp - 30);
+        if (!execRouterDelivers) {
+            _deliverExecutorHop(roundId, 1, HOP_CHAIN_B, block.timestamp - 30);
+        }
     }
 
     function executor_adminDispatch(uint256 actionSeed) public asAdmin {

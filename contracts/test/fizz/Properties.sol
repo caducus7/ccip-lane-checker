@@ -35,9 +35,12 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     }
 
     function property_executorWired() public view returns (bool) {
+        address primary = controller.primaryHopRecorder();
         return executor.remoteExecutors(HOP_CHAIN_A) != address(0)
             && executor.remoteExecutors(HOP_CHAIN_B) != address(0)
-            && controller.hopRecorders(address(executor));
+            && spokeExecutor.remoteExecutors(HOME_SELECTOR) == address(executor)
+            && primary != address(0)
+            && controller.hopRecorders(primary);
     }
 
     function property_prizeShareConservation() public view returns (bool) {
@@ -64,11 +67,11 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
             uint8 payoutLaneId = _winnerPayoutLane(roundId, winningLaneId);
 
             uint256 expectedWinner;
-            if (payoutLaneId != type(uint8).max && controller.getLanePool(roundId, payoutLaneId) > 0) {
+            if (payoutLaneId != type(uint8).max && controller.getLanePool(roundId, payoutLaneId) >= controller.minBet()) {
                 expectedWinner = p.winner;
             }
             uint256 expectedRunnerUp;
-            if (runnerUpLaneId != type(uint8).max && controller.getLanePool(roundId, runnerUpLaneId) > 0) {
+            if (runnerUpLaneId != type(uint8).max && controller.getLanePool(roundId, runnerUpLaneId) >= controller.minBet()) {
                 expectedRunnerUp = p.runnerUp;
             }
 

@@ -47,9 +47,9 @@ abstract contract LaneControllerHandler is Properties {
   LaneController.RoundState state = controller.getRoundState(roundId);
     if (state != LaneController.RoundState.Racing && state != LaneController.RoundState.Finished) return;
     uint8 laneId = uint8(laneSeed % 2);
-    (uint64[] memory path,,,,,) = controller.getLane(roundId, laneId);
-    if (path.length == 0) return;
-    uint64 chain = path[0];
+    (uint64[] memory path, uint8 hopsCompleted,,,,) = controller.getLane(roundId, laneId);
+    if (path.length == 0 || hopsCompleted >= path.length) return;
+    uint64 chain = path[hopsCompleted];
     uint256 sendTime = block.timestamp > timeSkew % 600 ? block.timestamp - (timeSkew % 600) : block.timestamp;
     controller.recordHop(roundId, laneId, chain, sendTime);
   }

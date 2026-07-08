@@ -7,5 +7,6 @@ import {Handlers} from "./handlers/Handlers.sol";
 contract FuzzTester is Handlers {
     constructor() payable {
         setup();
+        _seedCoverage();
     }
 }
