@@ -157,6 +157,7 @@ contract ReauditFixesTest is Test {
         LaneExecutor exec = new LaneExecutor(address(router), address(this));
         exec.setCreForwarder(cre);
         exec.setHopSender(cre, true);
+        exec.setAllowCcipLocalLoopback(true);
         exec.setRemoteExecutor(ARBITRUM, address(exec));
         exec.setHomeConfig(SEPOLIA, SEPOLIA, address(controller), address(exec));
         controller.setHopRecorder(address(exec), true);

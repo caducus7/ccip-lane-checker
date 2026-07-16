@@ -49,6 +49,7 @@ contract SixthPassFixesTest is Test {
         homeExecutor.setRemoteExecutor(BASE, address(baseExecutor));
         homeExecutor.setRemoteExecutor(ARBITRUM, address(baseExecutor)); // stand-in peer
         baseExecutor.setRemoteExecutor(HOME, address(homeExecutor));
+        baseExecutor.setAllowCcipLocalLoopback(true);
         baseExecutor.setRemoteExecutor(ARBITRUM, address(baseExecutor));
 
         homeExecutor.setHopSender(cre, true);
@@ -292,9 +293,13 @@ contract SixthPassLaneTokenFixesTest is Test {
     function test_transferAdmin_movesConfirmedOwner() public {
         address newAdmin = makeAddr("newAdmin");
         origin.transferAdmin(newAdmin);
-        assertEq(origin.admin(), newAdmin);
+        assertEq(origin.pendingAdmin(), newAdmin);
+        assertEq(origin.admin(), address(this), "admin unchanged until accept");
+        vm.prank(newAdmin);
+        origin.acceptAdmin();
         vm.prank(newAdmin);
         origin.acceptOwnership();
+        assertEq(origin.admin(), newAdmin);
         assertEq(origin.owner(), newAdmin);
     }
 

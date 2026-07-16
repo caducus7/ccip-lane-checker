@@ -95,7 +95,8 @@ contract LaneTokenTest is Test {
         vm.stopPrank();
 
         (,,,,,, bool isActive) = laneToken.getGameRound(1);
-        assertTrue(isActive);
+        // Local loopback marks in-flight until the hop is received.
+        assertFalse(isActive);
     }
 
     function test_FullMultiHopGame() public {

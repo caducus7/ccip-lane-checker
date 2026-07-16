@@ -112,10 +112,12 @@ abstract contract Base is StringUtils, Clamp, Deployer, Math {
         executor = new LaneExecutor(address(execRouter), admin);
         executor.setLaneController(address(controller));
         executor.setHomeConfig(HOME_SELECTOR, HOME_SELECTOR, address(controller), address(executor));
+        executor.setAllowCcipLocalLoopback(true);
         executor.setRemoteExecutor(HOP_CHAIN_B, address(executor));
 
         spokeExecutor = new LaneExecutor(address(execRouter), admin);
         spokeExecutor.setHomeConfig(HOP_CHAIN_A, HOME_SELECTOR, address(controller), address(executor));
+        spokeExecutor.setAllowCcipLocalLoopback(true);
         spokeExecutor.setRemoteExecutor(HOME_SELECTOR, address(executor));
         executor.setRemoteExecutor(HOP_CHAIN_A, address(spokeExecutor));
         spokeExecutor.setHopSender(cre, true);

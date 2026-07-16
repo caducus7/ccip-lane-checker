@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {LaneControllerPausable} from "../security/Pausable.sol";
@@ -190,7 +191,17 @@ contract LaneController is LaneControllerPausable, ILaneController, IReceiver, I
         claimWindow = DEFAULT_CLAIM_WINDOW;
         runnerUpSettlementTimeout = DEFAULT_RUNNER_UP_SETTLEMENT_TIMEOUT;
         raceAbandonTimeout = DEFAULT_RACE_ABANDON_TIMEOUT;
-        minBet = DEFAULT_MIN_BET;
+        minBet = _defaultMinBet(_bettingToken);
+    }
+
+    /// @dev One whole token when decimals are known; else USDC-style 1e6 fallback.
+    function _defaultMinBet(address token) private view returns (uint256) {
+        try IERC20Metadata(token).decimals() returns (uint8 d) {
+            if (d == 0 || d > 77) return DEFAULT_MIN_BET;
+            return 10 ** uint256(d);
+        } catch {
+            return DEFAULT_MIN_BET;
+        }
     }
 
     function setMinBet(uint256 newMinBet) external onlyOwner {
@@ -351,7 +362,9 @@ contract LaneController is LaneControllerPausable, ILaneController, IReceiver, I
         bettingToken.transferFromExact(msg.sender, address(this), amount);
         round.bets[laneId][msg.sender] += amount;
         round.lanePool[laneId] += amount;
-        round.totalPrizePool += amount;
+        uint256 newPool = round.totalPrizePool + amount;
+        if (newPool < round.totalPrizePool || newPool > PrizeCalculator.MAX_POOL) revert InvalidAmount();
+        round.totalPrizePool = newPool;
 
         emit BetPlaced(roundId, laneId, msg.sender, amount);
     }
@@ -572,13 +585,13 @@ contract LaneController is LaneControllerPausable, ILaneController, IReceiver, I
         uint256 lanePool = round.lanePool[laneId];
         uint256 winnerAmount;
         if (winnerShare > 0 && winnerRemaining > 0) {
-            winnerAmount = (winnerShare * bet) / lanePool;
+            winnerAmount = PrizeCalculator.proRata(winnerShare, bet, lanePool);
             if (winnerAmount > winnerRemaining) winnerAmount = winnerRemaining;
         }
 
         uint256 runnerUpAmount;
         if (runnerUpShare > 0 && runnerUpRemaining > 0) {
-            runnerUpAmount = (runnerUpShare * bet) / lanePool;
+            runnerUpAmount = PrizeCalculator.proRata(runnerUpShare, bet, lanePool);
             if (runnerUpAmount > runnerUpRemaining) runnerUpAmount = runnerUpRemaining;
         }
 
@@ -601,7 +614,7 @@ contract LaneController is LaneControllerPausable, ILaneController, IReceiver, I
         uint256 remaining = share - claimed;
         if (remaining == 0) return 0;
 
-        amount = (share * bet) / round.lanePool[laneId];
+        amount = PrizeCalculator.proRata(share, bet, round.lanePool[laneId]);
         if (amount > remaining) amount = remaining;
         if (amount == 0) return 0;
 

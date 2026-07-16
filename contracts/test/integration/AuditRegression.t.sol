@@ -40,6 +40,7 @@ contract AuditRegressionTest is Test {
         executor.setLaneController(address(controller));
         executor.setHomeConfig(localSelector, localSelector, address(controller), address(executor));
         controller.setHopRecorder(address(executor), true);
+        executor.setAllowCcipLocalLoopback(true);
         executor.setRemoteExecutor(localSelector, address(executor));
         executor.setRemoteExecutor(ChainConfig.SEPOLIA_SELECTOR, address(executor));
         executor.setRemoteExecutor(ChainConfig.ARBITRUM_SEPOLIA_SELECTOR, address(executor));

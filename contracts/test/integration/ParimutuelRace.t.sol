@@ -45,6 +45,7 @@ contract ParimutuelRaceTest is Test {
         executor.setHomeConfig(localSelector, localSelector, address(controller), address(executor));
         controller.setHopRecorder(address(executor), true);
         // Single local router: every "remote" executor is this executor.
+        executor.setAllowCcipLocalLoopback(true);
         executor.setRemoteExecutor(localSelector, address(executor));
         executor.setRemoteExecutor(ChainConfig.SEPOLIA_SELECTOR, address(executor));
         executor.setRemoteExecutor(ChainConfig.ARBITRUM_SEPOLIA_SELECTOR, address(executor));

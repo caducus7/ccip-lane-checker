@@ -160,9 +160,13 @@ abstract contract CoverageHandlers is Properties {
             address tmp = actors[seed % actors.length];
             laneToken.transferAdmin(tmp);
             vm.prank(tmp);
+            laneToken.acceptAdmin();
+            vm.prank(tmp);
             laneToken.acceptOwnership();
             vm.prank(tmp);
             laneToken.transferAdmin(admin);
+            vm.prank(admin);
+            laneToken.acceptAdmin();
             vm.prank(admin);
             laneToken.acceptOwnership();
         }

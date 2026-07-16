@@ -32,6 +32,7 @@ contract ClockSkewTest is Test {
 
         executor.setHomeConfig(LOCAL_SELECTOR, LOCAL_SELECTOR, address(controller), address(executor));
         controller.setHopRecorder(address(executor), true);
+        executor.setAllowCcipLocalLoopback(true);
         executor.setRemoteExecutor(REMOTE_SELECTOR, address(executor));
         executor.setRemoteExecutor(HOP_CHAIN, address(executor));
     }

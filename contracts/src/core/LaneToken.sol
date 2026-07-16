@@ -59,8 +59,11 @@ contract LaneToken is CCIPReceiver, VRFConsumerBaseV2Plus {
 
     mapping(uint64 => address) public remoteLaneTokens;
     address public admin;
+    address public pendingAdmin;
 
     event RemoteLaneTokenSet(uint64 indexed chainSelector, address laneToken);
+    event AdminTransferStarted(address indexed pendingAdmin);
+    event AdminTransferAccepted(address indexed newAdmin);
 
     event GameRoundStarted(uint256 indexed gameId, address indexed initiator, uint256 amount, uint8 maxHops);
     event HopCompleted(uint256 indexed gameId, uint64 fromChain, uint256 latency, uint8 hopCount);
@@ -74,6 +77,7 @@ contract LaneToken is CCIPReceiver, VRFConsumerBaseV2Plus {
     event LateHopRefunded(bytes32 indexed foreignKey, address indexed initiator, uint256 amount);
 
     error NotAdmin();
+    error NotPendingAdmin();
     error UnknownSource(uint64 sourceChainSelector);
     error UnauthorizedSource(address sender, address expected);
     error InvalidZeroAddress();
@@ -134,11 +138,20 @@ contract LaneToken is CCIPReceiver, VRFConsumerBaseV2Plus {
         emit RemoteLaneTokenSet(chainSelector, laneToken);
     }
 
+    /// @notice Propose a new admin + ConfirmedOwner. Complete with `acceptAdmin`.
     function transferAdmin(address newAdmin) external onlyAdmin {
         require(newAdmin != address(0), "zero admin");
-        admin = newAdmin;
-        // ConfirmedOwnerWithProposal: new admin must call acceptOwnership() to take coordinator rights.
+        pendingAdmin = newAdmin;
         transferOwnership(newAdmin);
+        emit AdminTransferStarted(newAdmin);
+    }
+
+    /// @notice Accept pending `admin`. Caller should also `acceptOwnership()` for VRF ConfirmedOwner.
+    function acceptAdmin() external {
+        if (msg.sender != pendingAdmin) revert NotPendingAdmin();
+        admin = msg.sender;
+        pendingAdmin = address(0);
+        emit AdminTransferAccepted(admin);
     }
 
     function deposit(uint256 amount) external {
@@ -457,6 +470,16 @@ contract LaneToken is CCIPReceiver, VRFConsumerBaseV2Plus {
 
         uint256 fee = s_router.getFee(destinationChainSelector, message);
         if (address(this).balance < fee) revert InsufficientCcipFee(fee, address(this).balance);
+
+        // Mark in-flight before the external CCIP call so sync delivery/settlement cannot
+        // observe isActive && !tokensBridgedOut and double-credit mid-bridge.
+        GameRound storage round = s_gameRounds[gameId];
+        if (round.isActive) {
+            round.tokensBridgedOut = true;
+            round.isActive = false;
+            s_tokensInPlay -= amount;
+        }
+
         messageId = s_router.ccipSend{value: fee}(destinationChainSelector, message);
         emit BridgeStarted(messageId, destinationChainSelector, amount);
 
@@ -468,14 +491,6 @@ contract LaneToken is CCIPReceiver, VRFConsumerBaseV2Plus {
         if (balanceBefore < balanceAfter || balanceBefore - balanceAfter < amount) {
             revert BridgeCustodyMismatch();
         }
-
-        GameRound storage round = s_gameRounds[gameId];
-        if (!round.isActive) {
-            return messageId;
-        }
-        round.tokensBridgedOut = true;
-        round.isActive = false;
-        s_tokensInPlay -= amount;
     }
 
     function _isSettlementMessage(bytes memory data) internal pure returns (bool) {
@@ -498,10 +513,15 @@ contract LaneToken is CCIPReceiver, VRFConsumerBaseV2Plus {
 
         GameRound storage round = s_gameRounds[gameId];
         if (round.isActive) {
-            // Freeze only — settlement carries no tokens. Crediting would inflate s_totalBooked
-            // without custody. Surplus late hops with tokens book to admin in `_recordHop`.
             round.isActive = false;
             s_tokensInPlay -= round.amount;
+            // Local custody still held (loopback / pre-bridge): reclaim to initiator.
+            // Bridged-out games are inactive already — paid on the finishing chain.
+            if (!round.tokensBridgedOut) {
+                s_balances[round.initiator] += round.amount;
+                s_totalBooked += round.amount;
+                emit LateHopRefunded(foreignKey, round.initiator, round.amount);
+            }
         }
         round.tokensBridgedOut = false;
     }

@@ -160,6 +160,7 @@ contract CoverageNegativesTest is Test {
     function test_executor_ccipReceive_beforeHomeConfig_reverts() public {
         MockCCIPRouter mockRouter = new MockCCIPRouter();
         LaneExecutor executor = new LaneExecutor(address(mockRouter), address(this));
+        executor.setAllowCcipLocalLoopback(true);
         executor.setRemoteExecutor(REMOTE_SELECTOR, address(executor));
 
         Client.Any2EVMMessage memory message = Client.Any2EVMMessage({
@@ -177,6 +178,7 @@ contract CoverageNegativesTest is Test {
 
     function test_executor_sendHop_unauthorized_reverts() public {
         LaneExecutor executor = new LaneExecutor(address(new MockCCIPRouter()), address(this));
+        executor.setAllowCcipLocalLoopback(true);
         executor.setRemoteExecutor(HOP_CHAIN, address(executor));
         vm.deal(address(executor), 1 ether);
 

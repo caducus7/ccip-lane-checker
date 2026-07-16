@@ -77,6 +77,7 @@ contract FourthPassFixesTest is Test {
         MockCanonicalController mockCanonical = new MockCanonicalController();
 
         executor.setHomeConfig(ORIGIN_SELECTOR, ORIGIN_SELECTOR, address(mockCanonical), address(executor));
+        executor.setAllowCcipLocalLoopback(true);
         executor.setRemoteExecutor(REMOTE_SELECTOR, address(executor));
 
         Client.Any2EVMMessage memory message = Client.Any2EVMMessage({

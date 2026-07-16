@@ -101,6 +101,7 @@ contract CrossChainAccountingTest is Test {
         LaneExecutor localExecutor = new LaneExecutor(address(plainRouter), address(this));
         localExecutor.setCreForwarder(cre);
         localExecutor.setHopSender(cre, true);
+        localExecutor.setAllowCcipLocalLoopback(true);
         localExecutor.setRemoteExecutor(REMOTE_SELECTOR, address(localExecutor));
         vm.deal(address(localExecutor), 1 ether);
 

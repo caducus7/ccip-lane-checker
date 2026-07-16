@@ -158,6 +158,7 @@ contract ResidualFixesTest is Test {
         MockCCIPRouter router = new MockCCIPRouter();
         LaneExecutor exec = new LaneExecutor(address(router), address(this));
         exec.setCreForwarder(cre);
+        exec.setAllowCcipLocalLoopback(true);
         exec.setRemoteExecutor(ARBITRUM, address(exec));
         exec.setHomeConfig(SEPOLIA, SEPOLIA, address(controller), address(exec));
         controller.setHopRecorder(address(exec), true);

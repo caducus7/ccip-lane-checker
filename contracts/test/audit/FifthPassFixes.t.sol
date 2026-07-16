@@ -151,6 +151,7 @@ contract FifthPassFixesTest is Test {
         uint64 dest = 999;
 
         laneExecutor.setCreForwarder(creA);
+        laneExecutor.setAllowCcipLocalLoopback(true);
         laneExecutor.setRemoteExecutor(dest, address(laneExecutor));
         vm.deal(address(laneExecutor), 1 ether);
 
