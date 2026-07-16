@@ -70,6 +70,8 @@ contract LaneToken is CCIPReceiver, VRFConsumerBaseV2Plus {
     event Withdrawn(address indexed user, uint256 amount);
     event NextHopRequested(uint256 indexed requestId);
     event GameAbandoned(uint256 indexed gameId, address indexed initiator, uint256 amount);
+    event SettlementPropagationSkipped(uint64 indexed chainSelector, uint256 requiredFee, uint256 available);
+    event LateHopRefunded(bytes32 indexed foreignKey, address indexed initiator, uint256 amount);
 
     error NotAdmin();
     error UnknownSource(uint64 sourceChainSelector);
@@ -86,12 +88,15 @@ contract LaneToken is CCIPReceiver, VRFConsumerBaseV2Plus {
     error DuplicateMessage(bytes32 messageId);
     error BridgeCustodyMismatch();
     error AlreadySettled(bytes32 foreignKey);
+    error SelfBridgeForbidden(uint64 chainSelector);
+    error NoWiredDestinations();
 
     bytes32 private constant SETTLEMENT_MESSAGE_TAG = keccak256("LaneToken.Settlement");
 
     uint8 public constant MAX_HOPS = 16;
     uint256 public constant GAME_ABANDON_TIMEOUT = 7 days;
     uint256 public constant MAX_CLOCK_SKEW = 15 minutes;
+    uint256 public constant CCIP_RECEIVE_GAS_LIMIT = 500_000;
 
     modifier onlyAdmin() {
         if (msg.sender != admin) revert NotAdmin();
@@ -132,6 +137,8 @@ contract LaneToken is CCIPReceiver, VRFConsumerBaseV2Plus {
     function transferAdmin(address newAdmin) external onlyAdmin {
         require(newAdmin != address(0), "zero admin");
         admin = newAdmin;
+        // ConfirmedOwnerWithProposal: new admin must call acceptOwnership() to take coordinator rights.
+        transferOwnership(newAdmin);
     }
 
     function deposit(uint256 amount) external {
@@ -240,12 +247,23 @@ contract LaneToken is CCIPReceiver, VRFConsumerBaseV2Plus {
         _verifyInboundTokens(message, payload.amount);
 
         uint256 gameId = _resolveInboundGameId(payload);
+        if (gameId == 0) {
+            // Late hop after settlement: tokens already credited to initiator.
+            return;
+        }
         _recordHop(gameId, payload, sourceSelector);
     }
 
     function _resolveInboundGameId(HopPayload memory payload) internal returns (uint256 gameId) {
         gameId = s_foreignKeyToGameId[payload.foreignKey];
         if (gameId == 0) {
+            if (s_foreignKeySettled[payload.foreignKey]) {
+                // Do not bootstrap tokensInPlay after settlement; refund initiator on this chain.
+                s_balances[payload.initiator] += payload.amount;
+                s_totalBooked += payload.amount;
+                emit LateHopRefunded(payload.foreignKey, payload.initiator, payload.amount);
+                return 0;
+            }
             return _bootstrapInboundGame(payload);
         }
 
@@ -261,6 +279,12 @@ contract LaneToken is CCIPReceiver, VRFConsumerBaseV2Plus {
             GameRound storage settled = s_gameRounds[gameId];
             settled.isActive = false;
             settled.tokensBridgedOut = false;
+            // Book inbound surplus to admin — initiator was already paid on the finishing chain.
+            if (payload.amount > 0) {
+                s_balances[admin] += payload.amount;
+                s_totalBooked += payload.amount;
+                emit LateHopRefunded(payload.foreignKey, admin, payload.amount);
+            }
             return;
         }
 
@@ -305,14 +329,48 @@ contract LaneToken is CCIPReceiver, VRFConsumerBaseV2Plus {
         GameRound storage round = s_gameRounds[gameId];
         require(round.isActive, "Game is not active");
 
-        uint256 randomIndex = randomWords[0] % s_supportedChainSelectors.length;
-        uint64 nextChainSelector = uint64(s_supportedChainSelectors[randomIndex]);
-        if (remoteLaneTokens[nextChainSelector] == address(0)) revert UnwiredRemoteLaneToken(nextChainSelector);
+        uint64 nextChainSelector = _pickWiredDestination(randomWords[0]);
         round.lastSendTime = block.timestamp;
 
         bytes memory messageData = _encodeHopMessage(gameId, round.lastSendTime);
         bytes32 messageId = _bridge(nextChainSelector, round.amount, messageData, gameId);
         s_messageIdToGameId[messageId] = gameId;
+    }
+
+    /// @dev Prefer remote wired peers; fall back to local self-loop when that is the only wiring.
+    function _pickWiredDestination(uint256 entropy) internal view returns (uint64) {
+        uint256 len = s_supportedChainSelectors.length;
+        uint256 wiredCount;
+        for (uint256 i = 0; i < len; i++) {
+            uint64 selector = uint64(s_supportedChainSelectors[i]);
+            address remote = remoteLaneTokens[selector];
+            if (remote == address(0)) continue;
+            if (remote == address(this) && selector != i_localChainSelector) continue;
+            if (selector == i_localChainSelector && remote != address(this)) continue;
+            // Skip local unless no foreign peer exists (filled in second pass).
+            if (selector == i_localChainSelector) continue;
+            wiredCount++;
+        }
+
+        if (wiredCount == 0) {
+            if (remoteLaneTokens[i_localChainSelector] == address(this)) {
+                return i_localChainSelector;
+            }
+            revert NoWiredDestinations();
+        }
+
+        uint256 target = entropy % wiredCount;
+        uint256 seen;
+        for (uint256 i = 0; i < len; i++) {
+            uint64 selector = uint64(s_supportedChainSelectors[i]);
+            if (selector == i_localChainSelector) continue;
+            address remote = remoteLaneTokens[selector];
+            if (remote == address(0)) continue;
+            if (remote == address(this)) continue;
+            if (seen == target) return selector;
+            seen++;
+        }
+        revert NoWiredDestinations();
     }
 
     function _bootstrapInboundGame(HopPayload memory payload) internal returns (uint256 gameId) {
@@ -367,7 +425,13 @@ contract LaneToken is CCIPReceiver, VRFConsumerBaseV2Plus {
 
     function _bridgeReceiver(uint64 destinationChainSelector) internal view returns (address receiver) {
         address remote = remoteLaneTokens[destinationChainSelector];
-        return remote == address(0) ? address(this) : remote;
+        if (remote == address(0)) revert UnwiredRemoteLaneToken(destinationChainSelector);
+        // Same-chain loopback (dest == local, receiver == this) is allowed for local sim.
+        // Mapping a *foreign* selector to this contract is the WIRE_SELF footgun — forbid it.
+        if (remote == address(this) && destinationChainSelector != i_localChainSelector) {
+            revert SelfBridgeForbidden(destinationChainSelector);
+        }
+        return remote;
     }
 
     function _bridge(uint64 destinationChainSelector, uint256 amount, bytes memory messageData, uint256 gameId)
@@ -387,7 +451,7 @@ contract LaneToken is CCIPReceiver, VRFConsumerBaseV2Plus {
             receiver: abi.encode(receiver),
             data: messageData,
             tokenAmounts: tokenAmounts,
-            extraArgs: "",
+            extraArgs: Client._argsToBytes(Client.EVMExtraArgsV1({gasLimit: CCIP_RECEIVE_GAS_LIMIT})),
             feeToken: address(0)
         });
 
@@ -434,6 +498,8 @@ contract LaneToken is CCIPReceiver, VRFConsumerBaseV2Plus {
 
         GameRound storage round = s_gameRounds[gameId];
         if (round.isActive) {
+            // Freeze only — settlement carries no tokens. Crediting would inflate s_totalBooked
+            // without custody. Surplus late hops with tokens book to admin in `_recordHop`.
             round.isActive = false;
             s_tokensInPlay -= round.amount;
         }
@@ -472,7 +538,7 @@ contract LaneToken is CCIPReceiver, VRFConsumerBaseV2Plus {
             uint64 chainSelector = uint64(s_supportedChainSelectors[i]);
             if (chainSelector == i_localChainSelector) continue;
             address remote = remoteLaneTokens[chainSelector];
-            if (remote == address(0)) continue;
+            if (remote == address(0) || remote == address(this)) continue;
             _bridgeSettlement(chainSelector, remote, data);
         }
     }
@@ -486,12 +552,15 @@ contract LaneToken is CCIPReceiver, VRFConsumerBaseV2Plus {
             receiver: abi.encode(receiver),
             data: messageData,
             tokenAmounts: tokenAmounts,
-            extraArgs: "",
+            extraArgs: Client._argsToBytes(Client.EVMExtraArgsV1({gasLimit: CCIP_RECEIVE_GAS_LIMIT})),
             feeToken: address(0)
         });
 
         uint256 fee = s_router.getFee(destinationChainSelector, message);
-        if (address(this).balance < fee) revert InsufficientCcipFee(fee, address(this).balance);
+        if (address(this).balance < fee) {
+            emit SettlementPropagationSkipped(destinationChainSelector, fee, address(this).balance);
+            return;
+        }
         s_router.ccipSend{value: fee}(destinationChainSelector, message);
     }
 

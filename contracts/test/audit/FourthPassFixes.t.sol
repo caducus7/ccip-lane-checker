@@ -83,7 +83,7 @@ contract FourthPassFixesTest is Test {
             messageId: keccak256("dup-hop"),
             sourceChainSelector: REMOTE_SELECTOR,
             sender: abi.encode(address(executor)),
-            data: abi.encode(uint256(1), uint8(0), HOP_CHAIN, block.timestamp),
+            data: abi.encode(uint256(1), uint8(0), REMOTE_SELECTOR, block.timestamp),
             destTokenAmounts: new Client.EVMTokenAmount[](0)
         });
 
@@ -158,7 +158,8 @@ contract FourthPassFixesTest is Test {
         vm.prank(cre);
         controller.distributePrizes(roundId);
 
-        controller.setClaimWindow(0);
+        // Live claimWindow changes must not shorten the snapshotted window.
+        controller.setClaimWindow(1);
         vm.prank(cre);
         vm.expectRevert(LaneController.ClaimWindowActive.selector);
         controller.sweepUnclaimed(roundId);

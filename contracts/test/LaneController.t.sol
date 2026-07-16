@@ -164,7 +164,7 @@ contract LaneControllerTest is Test {
         controller.claimPrize(roundId);
     }
 
-    function test_distributePrizes_emptyWinnerLane_redirectsToBettors() public {
+    function test_distributePrizes_emptyWinnerLane_sendsWinnerShareToPlatform() public {
         uint256 roundId = _createRound();
 
         vm.prank(player);
@@ -178,11 +178,11 @@ contract LaneControllerTest is Test {
         controller.distributePrizes(roundId);
 
         PrizeCalculator.Payout memory p = PrizeCalculator.calculate(200e6);
-        assertEq(token.balanceOf(treasury), p.platform);
+        assertEq(token.balanceOf(treasury), p.platform + p.winner);
         assertEq(token.balanceOf(gasReserve), p.gasReserve);
 
         vm.prank(player);
-        assertEq(controller.claimPrize(roundId), p.winner + p.runnerUp);
+        assertEq(controller.claimPrize(roundId), p.runnerUp);
     }
 
     // ---------------------------------------------------------------- access control
@@ -413,6 +413,7 @@ contract LaneControllerTest is Test {
         controller.onReport("", report);
 
         controller.unpause();
+        controller.abortRace(roundId);
         vm.prank(cre);
         controller.onReport("", report);
         assertEq(controller.currentRoundId(), roundId + 1);
@@ -471,8 +472,11 @@ contract LaneControllerTest is Test {
         assertEq(controller.roundCooldown(), controller.DEFAULT_ROUND_COOLDOWN());
 
         uint256 createdAt = block.timestamp;
-        _createRound();
+        uint256 roundId = _createRound();
         assertEq(controller.lastRoundCreatedAt(), createdAt);
+
+        // Abort so a new round may be created (active Betting blocks create).
+        controller.abortRace(roundId);
 
         uint256 availableAt = createdAt + controller.roundCooldown();
         vm.prank(cre);
@@ -491,14 +495,16 @@ contract LaneControllerTest is Test {
 
     function test_roundCooldown_appliesToOwnerToo() public {
         uint256 availableAt = block.timestamp + controller.roundCooldown();
-        _createRound();
+        uint256 roundId = _createRound();
+        controller.abortRace(roundId);
 
         vm.expectRevert(abi.encodeWithSelector(LaneController.RoundCooldownActive.selector, availableAt));
         controller.createRound(_twoLanePaths());
     }
 
     function test_roundCooldown_blocksCreateRoundViaReport() public {
-        _createRound();
+        uint256 roundId = _createRound();
+        controller.abortRace(roundId);
 
         bytes memory report = abi.encodeWithSelector(LaneController.createRound.selector, _twoLanePaths());
         vm.prank(cre);
@@ -517,7 +523,8 @@ contract LaneControllerTest is Test {
         assertEq(controller.roundCooldown(), 120);
 
         uint256 availableAt = block.timestamp + 120;
-        _createRound();
+        uint256 roundId = _createRound();
+        controller.abortRace(roundId);
         vm.warp(availableAt - 1);
         vm.prank(cre);
         vm.expectRevert(abi.encodeWithSelector(LaneController.RoundCooldownActive.selector, availableAt));
@@ -526,8 +533,17 @@ contract LaneControllerTest is Test {
 
     function test_setRoundCooldown_zeroDisablesGuard() public {
         controller.setRoundCooldown(0);
-        assertEq(_createRound(), 1);
+        uint256 roundId = _createRound();
+        assertEq(roundId, 1);
+        controller.abortRace(roundId);
         assertEq(_createRound(), 2);
+    }
+
+    function test_createRound_revertsWhilePriorActive() public {
+        _createRound();
+        vm.prank(cre);
+        vm.expectRevert(LaneController.ActiveRoundInProgress.selector);
+        controller.createRound(_twoLanePaths());
     }
 
     function test_distributePrizes_runnerUpPending_untilAllLanesFinish() public {

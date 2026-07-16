@@ -153,6 +153,8 @@ cre workflow simulate hop-sender --target staging-settings
 
 ### hop-sender (EVM log — continuation after HopReceived)
 
+Home-local path hops also emit `HopReceived` (alongside `LocalHopRecorded`) so this trigger continues the race without a separate log subscription.
+
 ```bash
 cre workflow simulate hop-sender \
   --target staging-settings \

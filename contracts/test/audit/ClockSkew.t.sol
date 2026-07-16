@@ -33,6 +33,7 @@ contract ClockSkewTest is Test {
         executor.setHomeConfig(LOCAL_SELECTOR, LOCAL_SELECTOR, address(controller), address(executor));
         controller.setHopRecorder(address(executor), true);
         executor.setRemoteExecutor(REMOTE_SELECTOR, address(executor));
+        executor.setRemoteExecutor(HOP_CHAIN, address(executor));
     }
 
     function _lanePaths() internal pure returns (uint64[][] memory paths) {
@@ -52,7 +53,7 @@ contract ClockSkewTest is Test {
             messageId: keccak256("hop"),
             sourceChainSelector: sourceSelector,
             sender: abi.encode(sender),
-            data: abi.encode(roundId, laneId, HOP_CHAIN, sendTime),
+            data: abi.encode(roundId, laneId, sourceSelector, sendTime),
             destTokenAmounts: new Client.EVMTokenAmount[](0)
         });
     }
@@ -65,7 +66,7 @@ contract ClockSkewTest is Test {
 
         uint256 sendTime = block.timestamp + 10 minutes;
         Client.Any2EVMMessage memory message =
-            _hopMessage(REMOTE_SELECTOR, address(executor), roundId, 0, sendTime);
+            _hopMessage(HOP_CHAIN, address(executor), roundId, 0, sendTime);
 
         vm.prank(address(router));
         executor.ccipReceive(message);

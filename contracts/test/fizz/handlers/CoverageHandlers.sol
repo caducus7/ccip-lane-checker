@@ -12,6 +12,14 @@ abstract contract CoverageHandlers is Properties {
     // ――――――――――――――――――――――――― LaneController ―――――――――――――――――――――――――
 
     function coverage_controller_createMultiHopRound() public asCre {
+        uint256 cur = controller.currentRoundId();
+        if (cur > 0) {
+            LaneController.RoundState s = controller.getRoundState(cur);
+            if (
+                s == LaneController.RoundState.Betting || s == LaneController.RoundState.Racing
+                    || s == LaneController.RoundState.Finished
+            ) return;
+        }
         uint256 roundId = controller.createRound(_threeLanePaths());
         _trackRound(roundId);
     }
@@ -152,7 +160,11 @@ abstract contract CoverageHandlers is Properties {
             address tmp = actors[seed % actors.length];
             laneToken.transferAdmin(tmp);
             vm.prank(tmp);
-            laneToken.transferAdmin(address(this));
+            laneToken.acceptOwnership();
+            vm.prank(tmp);
+            laneToken.transferAdmin(admin);
+            vm.prank(admin);
+            laneToken.acceptOwnership();
         }
     }
 
@@ -210,6 +222,14 @@ abstract contract CoverageHandlers is Properties {
     }
 
     function coverage_controller_dualShareClaim() public {
+        uint256 cur = controller.currentRoundId();
+        if (cur > 0) {
+            LaneController.RoundState s = controller.getRoundState(cur);
+            if (
+                s == LaneController.RoundState.Betting || s == LaneController.RoundState.Racing
+                    || s == LaneController.RoundState.Finished
+            ) return;
+        }
         vm.prank(cre);
         uint256 roundId = controller.createRound(_twoLanePaths());
         _trackRound(roundId);

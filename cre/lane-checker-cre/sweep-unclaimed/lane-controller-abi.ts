@@ -11,6 +11,9 @@ export const laneControllerAbi = parseAbi([
   "function distributePrizes(uint256 roundId) external",
   "function claimPrize(uint256 roundId) external returns (uint256 amount)",
   "function sweepUnclaimed(uint256 roundId) external",
+  "function abortRace(uint256 roundId) external",
+  "function claimRefund(uint256 roundId) external returns (uint256 amount)",
+  "function getRoundClaimInfo(uint256 roundId) external view returns (uint48 settledAt, uint48 claimWindowSnapshot, bool claimsSwept, bool prizesDistributed)",
   "function getRoundWinner(uint256 roundId) external view returns (uint8 winnerLaneId)",
   "function getRoundState(uint256 roundId) external view returns (uint8 state)",
   "function getLane(uint256 roundId, uint8 laneId) external view returns (uint64[] chainPath, uint8 hopsCompleted, uint8 requiredHops, uint256 totalLatency, uint256 finishTime, bool finished)",
@@ -33,4 +36,5 @@ export const RoundState = {
   Racing: 1,
   Finished: 2,
   Settled: 3,
+  Aborted: 4,
 } as const;

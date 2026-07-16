@@ -243,8 +243,14 @@ contract CoverageNegativesTest is Test {
         remote.withdraw(STAKE);
 
         uint256 bookedBefore = origin.s_balances(player);
+        uint256 adminBefore = origin.s_balances(origin.admin());
         _deliverDelayedHopToOrigin(player, STAKE, MAX_HOPS);
-        assertEq(origin.s_balances(player), bookedBefore, "settled hop must not credit again");
+        assertEq(origin.s_balances(player), bookedBefore, "must not double-pay initiator");
+        assertEq(
+            origin.s_balances(origin.admin()),
+            adminBefore + STAKE,
+            "settled known-game late hop books surplus to admin"
+        );
     }
 
     function test_laneToken_finishGame_skipsSecondCredit_whenAlreadySettled() public {
@@ -312,7 +318,8 @@ contract CoverageNegativesTest is Test {
     }
 
     function _deliverDelayedHopToOrigin(address player, uint256 amount, uint8 maxHops) internal {
-        bytes32 foreignKey = keccak256(abi.encodePacked(uint256(1), address(origin), uint256(1)));
+        // Must match LaneToken._foreignKey(originGameId) = keccak256(abi.encode(chainId, token, id)).
+        bytes32 foreignKey = keccak256(abi.encode(uint256(1), address(origin), uint256(1)));
         (,,,, uint256 lastSendTime,,) = origin.getGameRound(1);
 
         token.mint(address(origin), amount);

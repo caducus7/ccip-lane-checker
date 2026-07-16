@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import {Script, console2} from "forge-std/Script.sol";
 import {BroadcastScript} from "./BroadcastScript.sol";
 import {LaneToken} from "../src/core/LaneToken.sol";
+import {IERC20Metadata} from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
 import {LaneController} from "../src/core/LaneController.sol";
 import {LaneExecutor} from "../src/core/LaneExecutor.sol";
 import {ChainConfig} from "../src/libraries/ChainConfig.sol";
@@ -62,6 +63,9 @@ contract DeployAll is BroadcastScript {
             result.creForwarder = creForwarder;
             _wireLaneToken(LaneToken(payable(result.laneToken)), cfg, result.laneExecutor);
             _wireRemotePeers(cfg, result.laneExecutor, result.laneToken);
+            _configureCreWorkflowAllowlists(
+                LaneController(result.laneController), LaneExecutor(payable(result.laneExecutor))
+            );
         }
 
         vm.stopBroadcast();
@@ -81,6 +85,7 @@ contract DeployAll is BroadcastScript {
         _wireHomeConfig(cfg, result.laneController, result.laneExecutor);
         controller.setHopRecorder(result.laneExecutor, true);
         controller.setCreForwarder(creForwarder);
+        _configureCreWorkflowAllowlists(controller, executor);
 
         _wireLaneToken(LaneToken(payable(result.laneToken)), cfg, result.laneExecutor);
         _wireRemotePeers(cfg, result.laneExecutor, result.laneToken);
@@ -89,6 +94,32 @@ contract DeployAll is BroadcastScript {
     function _resolveCreForwarder(ChainConfig.NetworkConfig memory cfg) internal view returns (address) {
         address envForwarder = vm.envOr("CRE_FORWARDER", address(0));
         return envForwarder == address(0) ? cfg.creForwarder : envForwarder;
+    }
+
+    /// @dev Require CRE_WORKFLOW_OWNER and/or CRE_WORKFLOW_ID unless CRE_ALLOWLIST_OPTIONAL=true (local only).
+    function _configureCreWorkflowAllowlists(LaneController controller, LaneExecutor executor) internal {
+        address workflowOwner = vm.envOr("CRE_WORKFLOW_OWNER", address(0));
+        bytes32 workflowId = vm.envOr("CRE_WORKFLOW_ID", bytes32(0));
+        bool optional = vm.envOr("CRE_ALLOWLIST_OPTIONAL", false);
+
+        if (workflowOwner == address(0) && workflowId == bytes32(0)) {
+            if (!optional) {
+                revert("DeployAll: set CRE_WORKFLOW_OWNER and/or CRE_WORKFLOW_ID (or CRE_ALLOWLIST_OPTIONAL=true)");
+            }
+            console2.log("CRE workflow allowlists skipped (CRE_ALLOWLIST_OPTIONAL)");
+            return;
+        }
+
+        if (workflowOwner != address(0)) {
+            controller.setAllowedWorkflowOwner(workflowOwner, true);
+            executor.setAllowedWorkflowOwner(workflowOwner, true);
+            console2.log("CRE workflow owner allowlisted:", workflowOwner);
+        }
+        if (workflowId != bytes32(0)) {
+            controller.setAllowedWorkflowId(workflowId, true);
+            executor.setAllowedWorkflowId(workflowId, true);
+            console2.log("CRE workflow id allowlisted");
+        }
     }
 
     function _deployLaneToken(ChainConfig.NetworkConfig memory cfg) internal returns (address) {
@@ -120,6 +151,13 @@ contract DeployAll is BroadcastScript {
 
         LaneController controller = new LaneController(deployer, cfg.linkToken, treasury, gasReserve, creForwarder);
 
+        // DEFAULT_MIN_BET is 1e6 (6-decimal USDC). LINK is 18 decimals — set ~1 LINK.
+        uint8 decimals = IERC20Metadata(cfg.linkToken).decimals();
+        uint256 configuredMinBet = 10 ** uint256(decimals);
+        controller.setMinBet(configuredMinBet);
+        console2.log("LaneController minBet set for token decimals:", decimals);
+        console2.log("minBet:", configuredMinBet);
+
         console2.log("LaneController deployed:", address(controller));
         return address(controller);
     }
@@ -144,15 +182,16 @@ contract DeployAll is BroadcastScript {
     }
 
     function _wireLaneToken(LaneToken token, ChainConfig.NetworkConfig memory cfg, address localExecutor) internal {
+        // Never map this chain's selector to address(this) for bridging — self-bridge is forbidden.
         bool wireSelf = vm.envOr("WIRE_SELF", false);
         if (wireSelf) {
-            token.setRemoteLaneToken(cfg.chainSelector, address(token));
-            console2.log("Remote lane token (self):", cfg.chainSelector, address(token));
+            console2.log("WIRE_SELF: skip self LaneToken peer map (SelfBridgeForbidden). Wire real remotes in phase 2.");
         }
 
         // Parimutuel races use LaneExecutor; solo LaneToken hops are independent.
         // Fund executor with native token for CCIP fees after deploy.
         console2.log("Fund LaneExecutor with native for CCIP:", localExecutor);
+        console2.log("LaneToken local selector:", cfg.chainSelector);
     }
 
     function _wireRemotePeers(
@@ -180,11 +219,17 @@ contract DeployAll is BroadcastScript {
 
             address remoteLaneToken = _remoteLaneTokenAddress(peer);
             if (remoteLaneToken == address(0) && wireSelf) {
-                remoteLaneToken = localLaneToken;
+                // Do not point peer selectors at the local token — that enables self-bridge / wrong-chain sends.
+                console2.log("WIRE_SELF: skip LaneToken peer (need real REMOTE_LANE_TOKEN_*):", peer.name);
+                remoteLaneToken = address(0);
             }
             if (remoteLaneToken != address(0)) {
-                LaneToken(payable(localLaneToken)).setRemoteLaneToken(peer.chainSelector, remoteLaneToken);
-                console2.log("Remote lane token set:", peer.chainSelector, remoteLaneToken);
+                if (remoteLaneToken == localLaneToken) {
+                    console2.log("Skip LaneToken peer (same as local):", peer.chainSelector);
+                } else {
+                    LaneToken(payable(localLaneToken)).setRemoteLaneToken(peer.chainSelector, remoteLaneToken);
+                    console2.log("Remote lane token set:", peer.chainSelector, remoteLaneToken);
+                }
             } else {
                 console2.log("Skip remote lane token (unset):", peer.name);
             }

@@ -35,9 +35,8 @@ contract LaneTokenTest is Test {
         mockRouter = new MockCCIPRouter();
         mockVrfCoordinator = new MockVRFCoordinatorV2Plus();
 
-        uint256[] memory supportedChains = new uint256[](2);
-        supportedChains[0] = MUMBAI_SELECTOR;
-        supportedChains[1] = FUJI_SELECTOR;
+        uint256[] memory supportedChains = new uint256[](1);
+        supportedChains[0] = LOCAL_SELECTOR;
 
         laneToken = new LaneToken(
             address(mockRouter),
@@ -49,6 +48,8 @@ contract LaneTokenTest is Test {
             LOCAL_SELECTOR,
             supportedChains
         );
+        laneToken.setRemoteLaneToken(LOCAL_SELECTOR, address(laneToken));
+        // Auth mappings for simulated inbound hops (not used as bridge destinations).
         laneToken.setRemoteLaneToken(MUMBAI_SELECTOR, address(laneToken));
         laneToken.setRemoteLaneToken(FUJI_SELECTOR, address(laneToken));
 
@@ -86,11 +87,11 @@ contract LaneTokenTest is Test {
         vm.expectEmit(true, true, false, true);
         emit Approval(address(laneToken), address(mockRouter), START_AMOUNT);
         vm.expectEmit(true, true, false, false);
-        emit BridgeStarted(bytes32(uint256(1)), MUMBAI_SELECTOR, START_AMOUNT);
+        emit BridgeStarted(bytes32(uint256(1)), LOCAL_SELECTOR, START_AMOUNT);
         vm.expectEmit(true, true, false, false);
         emit GameRoundStarted(1, player, START_AMOUNT, 3);
 
-        laneToken.startGame(MUMBAI_SELECTOR, START_AMOUNT, 3);
+        laneToken.startGame(LOCAL_SELECTOR, START_AMOUNT, 3);
         vm.stopPrank();
 
         (,,,,,, bool isActive) = laneToken.getGameRound(1);
@@ -101,7 +102,7 @@ contract LaneTokenTest is Test {
         uint8 maxHops = 2;
 
         vm.prank(player);
-        laneToken.startGame(MUMBAI_SELECTOR, START_AMOUNT, maxHops);
+        laneToken.startGame(LOCAL_SELECTOR, START_AMOUNT, maxHops);
 
         uint256 gameId = 1;
         (,,,,, uint256 lastSendTime,) = laneToken.getGameRound(gameId);

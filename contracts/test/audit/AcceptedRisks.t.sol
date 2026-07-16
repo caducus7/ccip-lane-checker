@@ -43,11 +43,11 @@ contract AcceptedRisksTest is Test {
 
         MockVRFCoordinatorV2Plus vrf = new MockVRFCoordinatorV2Plus();
         uint256[] memory chains = new uint256[](1);
-        chains[0] = LOCAL_SELECTOR;
+        chains[0] = REMOTE_SELECTOR;
         laneToken = new LaneToken(
             address(router), address(token), address(vrf), 1, bytes32(0), block.chainid, LOCAL_SELECTOR, chains
         );
-        laneToken.setRemoteLaneToken(LOCAL_SELECTOR, address(laneToken));
+        laneToken.setRemoteLaneToken(REMOTE_SELECTOR, address(laneToken)); // peer stand-in; not local selector
 
         token.mint(player, 100e6);
         vm.prank(player);
@@ -88,7 +88,7 @@ contract AcceptedRisksTest is Test {
             messageId: keccak256("hop"),
             sourceChainSelector: REMOTE_SELECTOR,
             sender: abi.encode(address(executor)),
-            data: abi.encode(roundId, uint8(0), HOP_CHAIN, block.timestamp),
+            data: abi.encode(roundId, uint8(0), LOCAL_SELECTOR, block.timestamp),
             destTokenAmounts: new Client.EVMTokenAmount[](0)
         });
 
@@ -120,47 +120,30 @@ contract AcceptedRisksTest is Test {
     function test_startGame_rejectsZeroMaxHops() public {
         vm.prank(player);
         vm.expectRevert(LaneToken.InvalidMaxHops.selector);
-        laneToken.startGame(LOCAL_SELECTOR, 10e6, 0);
+        laneToken.startGame(REMOTE_SELECTOR, 10e6, 0);
     }
 
     function test_startGame_rejectsExcessiveMaxHops() public {
         uint8 excessive = laneToken.MAX_HOPS() + 1;
         vm.prank(player);
         vm.expectRevert(LaneToken.InvalidMaxHops.selector);
-        laneToken.startGame(LOCAL_SELECTOR, 10e6, excessive);
+        laneToken.startGame(REMOTE_SELECTOR, 10e6, excessive);
     }
 
-    function test_abandonGame_refundsAfterTimeout() public {
-        vm.deal(address(laneToken), 1 ether);
+    function test_startGame_rejectsSelfBridge() public {
         vm.prank(player);
-        laneToken.startGame(LOCAL_SELECTOR, 10e6, 2);
-
-        vm.warp(block.timestamp + laneToken.GAME_ABANDON_TIMEOUT() + 1);
-        vm.prank(player);
-        laneToken.abandonGame(1);
-
-        assertEq(laneToken.s_balances(player), 100e6);
-        assertEq(laneToken.s_tokensInPlay(), 0);
-        (,,,,,, bool active) = laneToken.getGameRound(1);
-        assertFalse(active);
-    }
-
-    function test_abandonGame_beforeTimeout_reverts() public {
-        vm.deal(address(laneToken), 1 ether);
-        vm.prank(player);
-        laneToken.startGame(LOCAL_SELECTOR, 10e6, 2);
-
-        vm.prank(player);
-        vm.expectRevert(LaneToken.GameNotAbandonable.selector);
-        laneToken.abandonGame(1);
+        vm.expectRevert(abi.encodeWithSelector(LaneToken.SelfBridgeForbidden.selector, REMOTE_SELECTOR));
+        laneToken.startGame(REMOTE_SELECTOR, 10e6, 2);
     }
 
     function test_startGame_insufficientCcipFee_reverts() public {
         router.setMockFee(1 ether);
         vm.deal(address(laneToken), 0);
+        address peer = makeAddr("peerToken");
+        laneToken.setRemoteLaneToken(REMOTE_SELECTOR, peer);
 
         vm.prank(player);
         vm.expectRevert(abi.encodeWithSelector(LaneToken.InsufficientCcipFee.selector, 1 ether, uint256(0)));
-        laneToken.startGame(LOCAL_SELECTOR, 10e6, 1);
+        laneToken.startGame(REMOTE_SELECTOR, 10e6, 1);
     }
 }

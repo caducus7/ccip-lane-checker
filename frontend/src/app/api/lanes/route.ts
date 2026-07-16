@@ -8,7 +8,9 @@ import {
 
 function isAuthorized(request: Request): boolean {
   const expected = process.env.LANE_BENCHMARK_AUTH_TOKEN;
-  if (!expected) return true;
+  if (!expected || expected.trim() === "") {
+    return false;
+  }
 
   const authHeader = request.headers.get("authorization");
   if (authHeader === `Bearer ${expected}`) return true;
@@ -37,6 +39,13 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  if (!process.env.LANE_BENCHMARK_AUTH_TOKEN?.trim()) {
+    return NextResponse.json(
+      { error: "LANE_BENCHMARK_AUTH_TOKEN is not configured" },
+      { status: 503 },
+    );
+  }
+
   if (!isAuthorized(request)) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }

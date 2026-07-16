@@ -120,7 +120,7 @@ contract ThirdPassLeadsTest is Test {
         laneToken.ccipReceive(message);
     }
 
-    function test_fulfillRandomWords_unwiredRemote_reverts() public {
+    function test_fulfillRandomWords_fallsBackToLocalSelfLoop() public {
         MockDeliveringCCIPRouter deliveringRouter = new MockDeliveringCCIPRouter();
         uint256[] memory chains = new uint256[](2);
         chains[0] = LOCAL_SELECTOR;
@@ -141,9 +141,50 @@ contract ThirdPassLeadsTest is Test {
         wired.startGame(LOCAL_SELECTOR, 10e6, 2);
 
         uint256[] memory randomWords = new uint256[](1);
-        randomWords[0] = 1;
-        vm.expectRevert(bytes("fulfillment failed"));
+        randomWords[0] = 1; // would have selected REMOTE under old modulo
         vrf.fulfillRandomWords(1, address(wired), randomWords);
+
+        // Unwired REMOTE is skipped; local self-loop completes the game.
+        (,,,,,, bool active) = wired.getGameRound(1);
+        assertFalse(active);
+    }
+
+    function test_fulfillRandomWords_noWiredDestinations_reverts() public {
+        MockDeliveringCCIPRouter deliveringRouter = new MockDeliveringCCIPRouter();
+        uint256[] memory chains = new uint256[](1);
+        chains[0] = REMOTE_SELECTOR;
+        LaneToken wired = new LaneToken(
+            address(deliveringRouter), address(token), address(vrf), 1, bytes32(0), block.chainid, LOCAL_SELECTOR, chains
+        );
+        // REMOTE left unwired; no local self-loop either.
+        deliveringRouter.setChainSelector(address(wired), LOCAL_SELECTOR);
+        // Need an inbound hop to request VRF — bootstrap via peer that is wired for receive only.
+        // Simpler: startGame requires a wired dest — wire then clear is impossible.
+        // Deploy with LOCAL in supported + self wire for start, then remove is not available.
+        // Use start via LOCAL self, then clear remote by overwriting REMOTE only.
+        uint256[] memory chains2 = new uint256[](2);
+        chains2[0] = LOCAL_SELECTOR;
+        chains2[1] = REMOTE_SELECTOR;
+        LaneToken token2 = new LaneToken(
+            address(deliveringRouter), address(token), address(vrf), 1, bytes32(0), block.chainid, LOCAL_SELECTOR, chains2
+        );
+        token2.setRemoteLaneToken(LOCAL_SELECTOR, address(token2));
+        deliveringRouter.setChainSelector(address(token2), LOCAL_SELECTOR);
+        vm.deal(address(token2), 1 ether);
+        token.mint(player, 10e6);
+        vm.startPrank(player);
+        token.approve(address(token2), type(uint256).max);
+        token2.deposit(10e6);
+        token2.startGame(LOCAL_SELECTOR, 10e6, 2);
+        vm.stopPrank();
+
+        // Unwire local so VRF has nowhere to go.
+        token2.setRemoteLaneToken(LOCAL_SELECTOR, address(0));
+
+        uint256[] memory randomWords = new uint256[](1);
+        randomWords[0] = 0;
+        vm.expectRevert(bytes("fulfillment failed"));
+        vrf.fulfillRandomWords(1, address(token2), randomWords);
     }
 
     function test_distributePrizes_afterRunnerUpTimeout_withoutStuckLane() public {

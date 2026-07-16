@@ -25,11 +25,12 @@ describe("isEligibleForSweep", () => {
   const base = {
     roundState: RoundState.Settled,
     winnerLaneId: 0,
-    winnerFinishTime: 1_000n,
-    claimWindowSeconds: 3600,
+    settledAt: 1_000n,
+    claimWindowSnapshot: 3_600n,
+    claimsSwept: false,
   };
 
-  test("accepts settled rounds after claim window", () => {
+  test("accepts settled rounds after claim window from settledAt", () => {
     expect(
       isEligibleForSweep({
         ...base,
@@ -43,6 +44,16 @@ describe("isEligibleForSweep", () => {
       isEligibleForSweep({
         ...base,
         nowSeconds: 2_000n,
+      }),
+    ).toBe(false);
+  });
+
+  test("rejects already swept rounds", () => {
+    expect(
+      isEligibleForSweep({
+        ...base,
+        claimsSwept: true,
+        nowSeconds: 9_000n,
       }),
     ).toBe(false);
   });

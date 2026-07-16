@@ -3,6 +3,7 @@
   "laneControllerAddress": "0xf7a6CAa15Fa51d30439e32E220A507F04611544a",
   "chainSelectorName": "ethereum-testnet-sepolia",
   "gasLimit": "800000",
+  "bettingWindowSeconds": 1800,
   "lanePaths": [
     ["16015286601757825753", "3478487238524512106", "10344971235874465080"],
     ["16015286601757825753", "10344971235874465080", "3478487238524512106"]

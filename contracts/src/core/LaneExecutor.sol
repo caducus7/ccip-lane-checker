@@ -31,15 +31,29 @@ contract LaneExecutor is CCIPReceiver, Ownable, Pausable, ILaneExecutor, IReceiv
     /// @notice LaneExecutor on the home chain — relay target for spoke-chain hop receipts.
     address public homeExecutor;
 
+    /// @notice Default gas for destination `ccipReceive` execution.
+    uint256 public constant CCIP_RECEIVE_GAS_LIMIT = 500_000;
+
     mapping(uint64 => address) public remoteExecutors;
     mapping(address => bool) public hopSenders;
     mapping(bytes32 => bool) private s_deliveredMessageIds;
+
+    mapping(bytes32 => bool) public allowedWorkflowIds;
+    mapping(bytes10 => bool) public allowedWorkflowNames;
+    mapping(address => bool) public allowedWorkflowOwners;
+    bool public workflowIdAllowlistActive;
+    bool public workflowNameAllowlistActive;
+    bool public workflowOwnerAllowlistActive;
 
     event HopSent(
         bytes32 indexed messageId, uint256 indexed roundId, uint8 indexed laneId, uint64 destChainSelector
     );
     event HopReceived(uint256 indexed roundId, uint8 indexed laneId, uint64 sourceChainSelector, uint256 latency);
     event HopRelayed(bytes32 indexed messageId, uint256 indexed roundId, uint8 indexed laneId);
+    event LocalHopRecorded(uint256 indexed roundId, uint8 indexed laneId, uint64 chainSelector);
+    event WorkflowIdAllowlistUpdated(bytes32 workflowId, bool allowed);
+    event WorkflowNameAllowlistUpdated(bytes10 workflowName, bool allowed);
+    event WorkflowOwnerAllowlistUpdated(address workflowOwner, bool allowed);
 
     error ControllerNotSet();
     error UnknownDestination(uint64 destChainSelector);
@@ -54,6 +68,9 @@ contract LaneExecutor is CCIPReceiver, Ownable, Pausable, ILaneExecutor, IReceiv
     error HomeControllerPaused();
     error InsufficientCcipFee(uint256 required, uint256 available);
     error DuplicateMessage(bytes32 messageId);
+    error InvalidHopChainSelector(uint64 provided, uint64 local, uint64 source);
+    error InvalidHopDestination(uint64 destChainSelector);
+    error InvalidRoundState();
 
     uint256 public constant MAX_CLOCK_SKEW = 15 minutes;
 
@@ -126,10 +143,50 @@ contract LaneExecutor is CCIPReceiver, Ownable, Pausable, ILaneExecutor, IReceiv
         hopSenders[forwarder] = true;
     }
 
+    function setAllowedWorkflowId(bytes32 workflowId, bool allowed) external onlyOwner {
+        allowedWorkflowIds[workflowId] = allowed;
+        if (allowed) workflowIdAllowlistActive = true;
+        emit WorkflowIdAllowlistUpdated(workflowId, allowed);
+    }
+
+    function setAllowedWorkflowName(bytes10 workflowName, bool allowed) external onlyOwner {
+        allowedWorkflowNames[workflowName] = allowed;
+        if (allowed) workflowNameAllowlistActive = true;
+        emit WorkflowNameAllowlistUpdated(workflowName, allowed);
+    }
+
+    function setAllowedWorkflowOwner(address workflowOwner, bool allowed) external onlyOwner {
+        if (workflowOwner == address(0)) revert ZeroAddress();
+        allowedWorkflowOwners[workflowOwner] = allowed;
+        if (allowed) workflowOwnerAllowlistActive = true;
+        emit WorkflowOwnerAllowlistUpdated(workflowOwner, allowed);
+    }
+
+    function clearWorkflowAllowlistFlags() external onlyOwner {
+        workflowIdAllowlistActive = false;
+        workflowNameAllowlistActive = false;
+        workflowOwnerAllowlistActive = false;
+    }
+
+    /// @notice ERC-165: IReceiver (Keystone) + CCIP receiver interfaces.
+    function supportsInterface(bytes4 interfaceId) public view override returns (bool) {
+        return interfaceId == type(IReceiver).interfaceId || super.supportsInterface(interfaceId);
+    }
+
     /// @inheritdoc IReceiver
-    function onReport(bytes calldata, bytes calldata report) external nonReentrant whenNotPaused {
+    function onReport(bytes calldata metadata, bytes calldata report) external whenNotPaused {
         if (msg.sender != creForwarder) revert NotAuthorized();
+        CreReportAuth.assertMetadata(
+            metadata,
+            workflowIdAllowlistActive,
+            workflowNameAllowlistActive,
+            workflowOwnerAllowlistActive,
+            allowedWorkflowIds,
+            allowedWorkflowNames,
+            allowedWorkflowOwners
+        );
         CreReportAuth.assertExecutorReport(report);
+        // No nonReentrant here: report may self-call `sendHop`, which is already guarded.
         (bool ok,) = address(this).call(report);
         if (!ok) revert ReportExecutionFailed();
     }
@@ -138,8 +195,28 @@ contract LaneExecutor is CCIPReceiver, Ownable, Pausable, ILaneExecutor, IReceiv
         external
         onlyHopSender
         whenNotPaused
+        nonReentrant
         returns (bytes32 messageId)
     {
+        _assertHopDestination(roundId, laneId, destChainSelector);
+
+        // Path hop on this chain: record locally (home) or relay (spoke) without CCIP self-send.
+        if (destChainSelector == localChainSelector) {
+            if (localChainSelector == homeChainSelector) {
+                if (canonicalController == address(0)) revert HomeConfigNotSet();
+                if (IPausable(canonicalController).paused()) revert HomeControllerPaused();
+                ILaneController(canonicalController).recordHop(
+                    roundId, laneId, localChainSelector, block.timestamp
+                );
+                emit LocalHopRecorded(roundId, laneId, localChainSelector);
+                // Same signature as CCIP path so CRE hop-sender continuation triggers fire.
+                emit HopReceived(roundId, laneId, localChainSelector, 0);
+                return bytes32(0);
+            }
+            messageId = _relayHopToHome(roundId, laneId, localChainSelector, block.timestamp);
+            return messageId;
+        }
+
         address destExecutor = remoteExecutors[destChainSelector];
         if (destExecutor == address(0)) revert UnknownDestination(destChainSelector);
 
@@ -147,7 +224,7 @@ contract LaneExecutor is CCIPReceiver, Ownable, Pausable, ILaneExecutor, IReceiv
             receiver: abi.encode(destExecutor),
             data: abi.encode(roundId, laneId, destChainSelector, block.timestamp),
             tokenAmounts: new Client.EVMTokenAmount[](0),
-            extraArgs: "",
+            extraArgs: Client._argsToBytes(Client.EVMExtraArgsV1({gasLimit: CCIP_RECEIVE_GAS_LIMIT})),
             feeToken: address(0)
         });
 
@@ -167,7 +244,7 @@ contract LaneExecutor is CCIPReceiver, Ownable, Pausable, ILaneExecutor, IReceiv
         address sender = abi.decode(message.sender, (address));
         if (sender != expectedSender) revert UnauthorizedSource(sender, expectedSender);
 
-        (uint256 roundId, uint8 laneId, uint64 hopChainSelector, uint256 sendTime) =
+        (uint256 roundId, uint8 laneId,, uint256 sendTime) =
             abi.decode(message.data, (uint256, uint8, uint64, uint256));
         if (sendTime > block.timestamp + MAX_CLOCK_SKEW) revert InvalidSendTime();
 
@@ -176,26 +253,67 @@ contract LaneExecutor is CCIPReceiver, Ownable, Pausable, ILaneExecutor, IReceiv
 
         if (localChainSelector == homeChainSelector) {
             if (IPausable(canonicalController).paused()) revert HomeControllerPaused();
+            // Direct hop onto home → local; relay from spoke → source chain completed the hop.
+            uint64 hopChainSelector = _resolveHomeHopSelector(message);
             uint256 recorded = sendTime > block.timestamp ? block.timestamp : sendTime;
             ILaneController(canonicalController).recordHop(roundId, laneId, hopChainSelector, recorded);
         } else {
-            _relayHopToHome(roundId, laneId, hopChainSelector, sendTime);
+            // Spoke always reports its own chain — never the untrusted payload selector.
+            _relayHopToHome(roundId, laneId, localChainSelector, sendTime);
         }
     }
 
-    function _relayHopToHome(uint256 roundId, uint8 laneId, uint64 hopChainSelector, uint256 sendTime) internal {
+    function _resolveHomeHopSelector(Client.Any2EVMMessage memory message) internal view returns (uint64) {
+        (, , uint64 claimedSelector,) = abi.decode(message.data, (uint256, uint8, uint64, uint256));
+        if (claimedSelector == localChainSelector) {
+            return localChainSelector;
+        }
+        if (claimedSelector == message.sourceChainSelector) {
+            return message.sourceChainSelector;
+        }
+        // Same-chain CCIP Local (and rare self-lane) loopback: source appears as local while the
+        // payload names the logical destination hop. Only accept if that hop is a wired peer.
+        if (
+            message.sourceChainSelector == localChainSelector
+                && remoteExecutors[claimedSelector] != address(0)
+        ) {
+            return claimedSelector;
+        }
+        revert InvalidHopChainSelector(claimedSelector, localChainSelector, message.sourceChainSelector);
+    }
+
+    function _relayHopToHome(uint256 roundId, uint8 laneId, uint64 hopChainSelector, uint256 sendTime)
+        internal
+        returns (bytes32 messageId)
+    {
         if (homeExecutor == address(0)) revert HomeConfigNotSet();
 
         Client.EVM2AnyMessage memory message = Client.EVM2AnyMessage({
             receiver: abi.encode(homeExecutor),
             data: abi.encode(roundId, laneId, hopChainSelector, sendTime),
             tokenAmounts: new Client.EVMTokenAmount[](0),
-            extraArgs: "",
+            extraArgs: Client._argsToBytes(Client.EVMExtraArgsV1({gasLimit: CCIP_RECEIVE_GAS_LIMIT})),
             feeToken: address(0)
         });
 
-        bytes32 messageId = _ccipSend(homeChainSelector, message);
+        messageId = _ccipSend(homeChainSelector, message);
         emit HopRelayed(messageId, roundId, laneId);
+    }
+
+    function _assertHopDestination(uint256 roundId, uint8 laneId, uint64 destChainSelector) internal view {
+        if (address(s_laneController) == address(0)) return;
+        if (localChainSelector != homeChainSelector) return;
+
+        (bool ok, bytes memory ret) =
+            address(s_laneController).staticcall(abi.encodeWithSignature("getRoundState(uint256)", roundId));
+        if (!ok || ret.length < 32) revert InvalidRoundState();
+        uint8 state = abi.decode(ret, (uint8));
+        // Racing=1, Finished=2 — keep recording runner-up hops while Finished.
+        if (state != 1 && state != 2) revert InvalidRoundState();
+
+        (uint64[] memory path, uint8 hopsCompleted,,,, bool finished) = s_laneController.getLane(roundId, laneId);
+        if (finished || hopsCompleted >= path.length) revert InvalidHopDestination(destChainSelector);
+        if (path[hopsCompleted] != destChainSelector) revert InvalidHopDestination(destChainSelector);
     }
 
     function _ccipSend(uint64 destChainSelector, Client.EVM2AnyMessage memory message)

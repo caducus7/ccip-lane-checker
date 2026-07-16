@@ -67,7 +67,7 @@ contract FifthPassFixesTest is Test {
         (, , uint8 requiredHops,, ,) = controller.getLane(roundId, laneId);
 
         bytes32 roundBase = keccak256(abi.encode(roundId, ROUNDS_SLOT));
-        bytes32 laneBase = keccak256(abi.encode(laneId, uint256(roundBase) + 6));
+        bytes32 laneBase = keccak256(abi.encode(laneId, uint256(roundBase) + 8));
 
         uint256 laneMeta = uint256(requiredHops) | (uint256(requiredHops) << 8) | (uint256(1) << 16);
         vm.store(address(controller), bytes32(uint256(laneBase) + 1), bytes32(laneMeta));
@@ -92,18 +92,43 @@ contract FifthPassFixesTest is Test {
     }
 
     function test_dustBet_cannotCaptureWinnerShare() public {
-        // Temporarily allow sub-minBet placement to exercise redirect defense for legacy dust.
-        controller.setMinBet(0);
-
+        // Empty winning lane: winner share goes to platform (not redirected to another lane).
         uint256 roundId = _createRound();
         uint256 victimBet = 200e6;
 
         vm.prank(victim);
         controller.buyLaneTokens(roundId, 1, victimBet);
-        vm.prank(attacker);
-        controller.buyLaneTokens(roundId, 0, 1);
 
-        controller.setMinBet(controller.DEFAULT_MIN_BET());
+        vm.prank(cre);
+        controller.startRace(roundId);
+        _finishLane(roundId, 0); // empty winner
+        _finishLane(roundId, 1);
+
+        uint256 treasuryBefore = token.balanceOf(treasury);
+        PrizeCalculator.Payout memory p = PrizeCalculator.calculate(victimBet);
+
+        vm.prank(cre);
+        controller.distributePrizes(roundId);
+
+        assertEq(
+            token.balanceOf(treasury) - treasuryBefore,
+            p.platform + p.winner,
+            "empty winner share to platform"
+        );
+
+        vm.prank(victim);
+        uint256 claimed = controller.claimPrize(roundId);
+        assertEq(claimed, p.runnerUp, "victim receives runner-up share only");
+    }
+
+    function test_minBetSnapshot_ignoresPostCreateRaise() public {
+        uint256 roundId = _createRound();
+        uint256 bet = controller.minBet();
+
+        vm.prank(victim);
+        controller.buyLaneTokens(roundId, 0, bet);
+
+        controller.setMinBet(bet * 1000);
 
         vm.prank(cre);
         controller.startRace(roundId);
@@ -113,16 +138,9 @@ contract FifthPassFixesTest is Test {
         vm.prank(cre);
         controller.distributePrizes(roundId);
 
-        PrizeCalculator.Payout memory p = PrizeCalculator.calculate(victimBet + 1);
-
-        vm.prank(attacker);
-        vm.expectRevert(LaneController.NothingToClaim.selector);
-        controller.claimPrize(roundId);
-
+        PrizeCalculator.Payout memory p = PrizeCalculator.calculate(bet);
         vm.prank(victim);
-        uint256 claimed = controller.claimPrize(roundId);
-        assertEq(claimed, p.winner + p.runnerUp, "victim receives redirected winner + runner-up shares");
-        assertGt(claimed, (victimBet * 70) / 100, "attacker must not capture ~70% winner share");
+        assertEq(controller.claimPrize(roundId), p.winner);
     }
 
     function test_setCreForwarder_revokesOldHopSender() public {

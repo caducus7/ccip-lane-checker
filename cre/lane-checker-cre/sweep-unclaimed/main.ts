@@ -116,16 +116,19 @@ const readWinnerLaneId = (
   );
 };
 
-const readWinnerFinishTime = (
+const readClaimInfo = (
   runtime: Runtime<Config>,
   roundId: bigint,
-  winnerLaneId: number,
-): bigint => {
+): {
+  settledAt: bigint;
+  claimWindowSnapshot: bigint;
+  claimsSwept: boolean;
+} => {
   const evmClient = createEvmClient(runtime.config);
   const callData = encodeFunctionData({
     abi: laneControllerAbi,
-    functionName: "getLane",
-    args: [roundId, winnerLaneId],
+    functionName: "getRoundClaimInfo",
+    args: [roundId],
   });
 
   const result = evmClient
@@ -141,11 +144,15 @@ const readWinnerFinishTime = (
 
   const decoded = decodeFunctionResult({
     abi: laneControllerAbi,
-    functionName: "getLane",
+    functionName: "getRoundClaimInfo",
     data: bytesToHex(result.data),
-  }) as readonly [readonly bigint[], number, number, bigint, bigint, boolean];
+  }) as readonly [bigint, bigint, boolean, boolean];
 
-  return decoded[4];
+  return {
+    settledAt: decoded[0],
+    claimWindowSnapshot: decoded[1],
+    claimsSwept: decoded[2],
+  };
 };
 
 const onCronTrigger = (
@@ -174,19 +181,16 @@ const onCronTrigger = (
   for (const roundId of roundIds) {
     const roundState = readRoundState(runtime, roundId);
     const winnerLaneId = readWinnerLaneId(runtime, roundId);
-    const winnerFinishTime = readWinnerFinishTime(
-      runtime,
-      roundId,
-      winnerLaneId,
-    );
+    const claimInfo = readClaimInfo(runtime, roundId);
 
     if (
       !isEligibleForSweep({
         roundState,
         winnerLaneId,
-        winnerFinishTime,
+        settledAt: claimInfo.settledAt,
+        claimWindowSnapshot: claimInfo.claimWindowSnapshot,
+        claimsSwept: claimInfo.claimsSwept,
         nowSeconds,
-        claimWindowSeconds: runtime.config.claimWindowSeconds,
       })
     ) {
       skipped.push({

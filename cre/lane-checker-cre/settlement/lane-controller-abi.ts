@@ -9,6 +9,8 @@ export const laneControllerAbi = parseAbi([
   "function startRace(uint256 roundId) external",
   "function declareWinner(uint256 roundId, uint8 laneId) external",
   "function distributePrizes(uint256 roundId) external",
+  "function abortRace(uint256 roundId) external",
+  "function isRaceAbortable(uint256 roundId) external view returns (bool)",
   "function claimPrize(uint256 roundId) external returns (uint256 amount)",
   "function sweepUnclaimed(uint256 roundId) external",
   "function getRoundWinner(uint256 roundId) external view returns (uint8 winnerLaneId)",
@@ -33,4 +35,5 @@ export const RoundState = {
   Racing: 1,
   Finished: 2,
   Settled: 3,
+  Aborted: 4,
 } as const;

@@ -258,7 +258,7 @@ abstract contract Base is StringUtils, Clamp, Deployer, Math {
     function _forceFinishLaneWithoutWinner(uint256 roundId, uint8 laneId) internal {
         (, , uint8 requiredHops,, ,) = controller.getLane(roundId, laneId);
         bytes32 roundBase = keccak256(abi.encode(roundId, uint256(5)));
-        bytes32 laneBase = keccak256(abi.encode(laneId, uint256(roundBase) + 6));
+        bytes32 laneBase = keccak256(abi.encode(laneId, uint256(roundBase) + 8));
         uint256 laneMeta = uint256(requiredHops) | (uint256(requiredHops) << 8) | (uint256(1) << 16);
         vm.store(address(controller), bytes32(uint256(laneBase) + 1), bytes32(laneMeta));
         vm.store(address(controller), bytes32(uint256(laneBase) + 3), bytes32(block.timestamp));

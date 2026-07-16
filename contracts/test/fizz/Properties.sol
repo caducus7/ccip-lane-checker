@@ -67,11 +67,11 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
             uint8 payoutLaneId = _winnerPayoutLane(roundId, winningLaneId);
 
             uint256 expectedWinner;
-            if (payoutLaneId != type(uint8).max && controller.getLanePool(roundId, payoutLaneId) >= controller.minBet()) {
+            if (payoutLaneId != type(uint8).max && controller.getLanePool(roundId, payoutLaneId) >= controller.getRoundMinBet(roundId)) {
                 expectedWinner = p.winner;
             }
             uint256 expectedRunnerUp;
-            if (runnerUpLaneId != type(uint8).max && controller.getLanePool(roundId, runnerUpLaneId) >= controller.minBet()) {
+            if (runnerUpLaneId != type(uint8).max && controller.getLanePool(roundId, runnerUpLaneId) >= controller.getRoundMinBet(roundId)) {
                 expectedRunnerUp = p.runnerUp;
             }
 
@@ -110,12 +110,12 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
         uint8 payoutLaneId = _winnerPayoutLane(roundId, winningLaneId);
 
         uint256 winnerShare;
-        if (payoutLaneId != type(uint8).max && controller.getLanePool(roundId, payoutLaneId) >= controller.minBet()) {
+        if (payoutLaneId != type(uint8).max && controller.getLanePool(roundId, payoutLaneId) >= controller.getRoundMinBet(roundId)) {
             winnerShare = p.winner;
         }
 
         uint256 runnerUpShare;
-        if (runnerUpLaneId != type(uint8).max && controller.getLanePool(roundId, runnerUpLaneId) >= controller.minBet()) {
+        if (runnerUpLaneId != type(uint8).max && controller.getLanePool(roundId, runnerUpLaneId) >= controller.getRoundMinBet(roundId)) {
             runnerUpShare = p.runnerUp;
         }
 
@@ -124,18 +124,9 @@ abstract contract Properties is PropertiesAsserts, Snapshots {
     }
 
     function _winnerPayoutLane(uint256 roundId, uint8 winningLaneId) internal view returns (uint8) {
-        if (controller.getLanePool(roundId, winningLaneId) >= controller.minBet()) return winningLaneId;
-
-        uint8 bestLane = type(uint8).max;
-        uint256 bestPool;
-        for (uint8 i = 0; i < 2; i++) {
-            if (i == winningLaneId) continue;
-            uint256 pool = controller.getLanePool(roundId, i);
-            if (pool >= controller.minBet() && pool > bestPool) {
-                bestPool = pool;
-                bestLane = i;
-            }
+        if (controller.getLanePool(roundId, winningLaneId) >= controller.getRoundMinBet(roundId)) {
+            return winningLaneId;
         }
-        return bestLane;
+        return type(uint8).max;
     }
 }

@@ -30,22 +30,25 @@ export function roundIdsToScan(
 export function isEligibleForSweep(input: {
   roundState: number;
   winnerLaneId: number;
-  winnerFinishTime: bigint;
+  settledAt: bigint;
+  claimWindowSnapshot: bigint;
+  claimsSwept: boolean;
   nowSeconds: bigint;
-  claimWindowSeconds: number;
 }): boolean {
   if (input.roundState !== RoundState.Settled) {
+    return false;
+  }
+  if (input.claimsSwept) {
     return false;
   }
   if (input.winnerLaneId === NO_LANE) {
     return false;
   }
-  if (input.winnerFinishTime === 0n) {
+  if (input.settledAt === 0n) {
     return false;
   }
 
-  const claimDeadline =
-    input.winnerFinishTime + BigInt(input.claimWindowSeconds);
+  const claimDeadline = input.settledAt + input.claimWindowSnapshot;
   return input.nowSeconds >= claimDeadline;
 }
 

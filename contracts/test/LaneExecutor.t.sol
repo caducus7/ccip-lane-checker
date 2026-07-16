@@ -57,15 +57,16 @@ contract LaneExecutorTest is Test {
         executor.setHomeConfig(LOCAL_SELECTOR, LOCAL_SELECTOR, address(controller), address(executor));
         controller.setHopRecorder(address(executor), true);
         executor.setRemoteExecutor(REMOTE_SELECTOR, address(executor));
+        executor.setRemoteExecutor(HOP_CHAIN, address(executor));
         executor.setHopSender(cre, true);
     }
 
     function _lanePaths() internal pure returns (uint64[][] memory paths) {
         paths = new uint64[][](2);
         paths[0] = new uint64[](1);
-        paths[0][0] = HOP_CHAIN;
+        paths[0][0] = REMOTE_SELECTOR;
         paths[1] = new uint64[](1);
-        paths[1][0] = HOP_CHAIN;
+        paths[1][0] = REMOTE_SELECTOR;
     }
 
     function _hopMessage(uint64 sourceSelector, address sender, uint256 roundId, uint8 laneId, uint256 sendTime)
@@ -77,7 +78,7 @@ contract LaneExecutorTest is Test {
             messageId: keccak256("hop"),
             sourceChainSelector: sourceSelector,
             sender: abi.encode(sender),
-            data: abi.encode(roundId, laneId, HOP_CHAIN, sendTime),
+            data: abi.encode(roundId, laneId, sourceSelector, sendTime),
             destTokenAmounts: new Client.EVMTokenAmount[](0)
         });
     }
@@ -163,7 +164,7 @@ contract LaneExecutorTest is Test {
         vm.prank(cre);
         controller.startRace(roundId);
 
-        bytes memory report = abi.encodeWithSelector(LaneExecutor.sendHop.selector, roundId, uint8(0), HOP_CHAIN);
+        bytes memory report = abi.encodeWithSelector(LaneExecutor.sendHop.selector, roundId, uint8(0), REMOTE_SELECTOR);
         vm.prank(cre);
         executor.onReport("", report);
     }

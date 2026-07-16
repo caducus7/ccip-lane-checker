@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {LaneControllerPausable} from "../security/Pausable.sol";
 import {PrizeCalculator} from "../libraries/PrizeCalculator.sol";
@@ -12,20 +13,22 @@ import {CreReportAuth} from "../libraries/CreReportAuth.sol";
 
 /// @title LaneController
 /// @notice Parimutuel multi-lane CCIP racing pool.
-/// @dev Round lifecycle: Betting -> Racing -> Finished (winner declared) -> Settled.
+/// @dev Round lifecycle: Betting -> Racing -> Finished -> Settled, or Aborted with pull refunds.
 ///      Hops keep recording while Finished so the runner-up lane can complete.
 ///      Prize split (PrizeCalculator): 70% winner lane bettors, 15% platform,
 ///      10% gas reserve, 5% runner-up lane bettors. Winner/runner-up shares are
 ///      pull-based via `claimPrize`; shares with no eligible bettors go to the platform.
-///      Only standard ERC20 betting tokens are supported (no fee-on-transfer).
-contract LaneController is LaneControllerPausable, ILaneController, IReceiver, ReentrancyGuard {
+///      Races stuck in Betting/Racing past `raceAbandonTimeout` can be aborted; bettors
+///      pull principal via `claimRefund`. Only standard ERC20 betting tokens are supported.
+contract LaneController is LaneControllerPausable, ILaneController, IReceiver, IERC165, ReentrancyGuard {
     using StandardTokenTransfer for IERC20;
 
     enum RoundState {
         Betting,
         Racing,
         Finished,
-        Settled
+        Settled,
+        Aborted
     }
 
     uint8 internal constant NO_LANE = type(uint8).max;
@@ -51,6 +54,13 @@ contract LaneController is LaneControllerPausable, ILaneController, IReceiver, R
         uint48 settledAt;
         uint48 claimWindowSnapshot;
         uint48 runnerUpSettlementTimeoutSnapshot;
+        uint48 createdAt;
+        uint48 racingStartedAt;
+        /// @dev Last hop activity (or race start if no hops yet); used for idle abort timeout.
+        uint48 lastHopAt;
+        uint48 raceAbandonTimeoutSnapshot;
+        /// @dev Snapshot of `minBet` at round creation; used for placement and payout eligibility.
+        uint256 minBetSnapshot;
         uint256 totalPrizePool;
         uint256 winnerShare;
         uint256 runnerUpShare;
@@ -79,6 +89,15 @@ contract LaneController is LaneControllerPausable, ILaneController, IReceiver, R
     uint48 public claimWindow;
     /// @notice After the winner lane finishes, settlement may proceed without the runner-up lane.
     uint48 public runnerUpSettlementTimeout;
+    /// @notice After create/start, unfinished rounds may be aborted so bettors can reclaim stakes.
+    uint48 public raceAbandonTimeout;
+
+    mapping(bytes32 => bool) public allowedWorkflowIds;
+    mapping(bytes10 => bool) public allowedWorkflowNames;
+    mapping(address => bool) public allowedWorkflowOwners;
+    bool public workflowIdAllowlistActive;
+    bool public workflowNameAllowlistActive;
+    bool public workflowOwnerAllowlistActive;
 
     event RoundCreated(uint256 indexed roundId, uint8 laneCount);
     event BetPlaced(uint256 indexed roundId, uint8 indexed laneId, address indexed bettor, uint256 amount);
@@ -90,6 +109,11 @@ contract LaneController is LaneControllerPausable, ILaneController, IReceiver, R
     event WinnerDeclared(uint256 indexed roundId, uint8 indexed laneId, uint256 finishTime);
     event PrizesDistributed(uint256 indexed roundId, uint8 winnerLaneId, uint256 winnerPayout);
     event PrizeClaimed(uint256 indexed roundId, address indexed bettor, uint256 amount);
+    event RaceAborted(uint256 indexed roundId);
+    event RefundClaimed(uint256 indexed roundId, address indexed bettor, uint256 amount);
+    event WorkflowIdAllowlistUpdated(bytes32 workflowId, bool allowed);
+    event WorkflowNameAllowlistUpdated(bytes10 workflowName, bool allowed);
+    event WorkflowOwnerAllowlistUpdated(address workflowOwner, bool allowed);
 
     error InvalidRound();
     error InvalidLane();
@@ -110,12 +134,19 @@ contract LaneController is LaneControllerPausable, ILaneController, IReceiver, R
     error RunnerUpPending();
     error ClaimWindowActive();
     error ClaimsSwept();
+    error RaceNotAbortable();
+    error NotAborted();
+    error ActiveRoundInProgress();
+    error ZeroClaimWindow();
+    error ZeroRaceAbandonTimeout();
+    error ZeroMinBet();
 
     uint256 internal constant MAX_HOP_LATENCY = 30 days;
     uint256 public constant MAX_HOPS = 16;
     uint48 public constant DEFAULT_ROUND_COOLDOWN = 60 seconds;
     uint48 public constant DEFAULT_CLAIM_WINDOW = 7 days;
     uint48 public constant DEFAULT_RUNNER_UP_SETTLEMENT_TIMEOUT = 7 days;
+    uint48 public constant DEFAULT_RACE_ABANDON_TIMEOUT = 7 days;
     /// @dev Default 1 USDC for 6-decimal betting tokens.
     uint256 public constant DEFAULT_MIN_BET = 1e6;
     uint256 public constant MAX_CLOCK_SKEW = 15 minutes;
@@ -124,6 +155,7 @@ contract LaneController is LaneControllerPausable, ILaneController, IReceiver, R
     event RoundCooldownUpdated(uint48 cooldown);
     event ClaimWindowUpdated(uint48 window);
     event RunnerUpSettlementTimeoutUpdated(uint48 timeout);
+    event RaceAbandonTimeoutUpdated(uint48 timeout);
     event MinBetUpdated(uint256 minBet);
 
     modifier onlyRound(uint256 roundId) {
@@ -157,10 +189,12 @@ contract LaneController is LaneControllerPausable, ILaneController, IReceiver, R
         roundCooldown = DEFAULT_ROUND_COOLDOWN;
         claimWindow = DEFAULT_CLAIM_WINDOW;
         runnerUpSettlementTimeout = DEFAULT_RUNNER_UP_SETTLEMENT_TIMEOUT;
+        raceAbandonTimeout = DEFAULT_RACE_ABANDON_TIMEOUT;
         minBet = DEFAULT_MIN_BET;
     }
 
     function setMinBet(uint256 newMinBet) external onlyOwner {
+        if (newMinBet == 0) revert ZeroMinBet();
         minBet = newMinBet;
         emit MinBetUpdated(newMinBet);
     }
@@ -171,6 +205,7 @@ contract LaneController is LaneControllerPausable, ILaneController, IReceiver, R
     }
 
     function setClaimWindow(uint48 window) external onlyOwner {
+        if (window == 0) revert ZeroClaimWindow();
         claimWindow = window;
         emit ClaimWindowUpdated(window);
     }
@@ -180,14 +215,59 @@ contract LaneController is LaneControllerPausable, ILaneController, IReceiver, R
         emit RunnerUpSettlementTimeoutUpdated(timeout);
     }
 
+    function setRaceAbandonTimeout(uint48 timeout) external onlyOwner {
+        if (timeout == 0) revert ZeroRaceAbandonTimeout();
+        raceAbandonTimeout = timeout;
+        emit RaceAbandonTimeoutUpdated(timeout);
+    }
+
+    function setAllowedWorkflowId(bytes32 workflowId, bool allowed) external onlyOwner {
+        allowedWorkflowIds[workflowId] = allowed;
+        if (allowed) workflowIdAllowlistActive = true;
+        emit WorkflowIdAllowlistUpdated(workflowId, allowed);
+    }
+
+    function setAllowedWorkflowName(bytes10 workflowName, bool allowed) external onlyOwner {
+        allowedWorkflowNames[workflowName] = allowed;
+        if (allowed) workflowNameAllowlistActive = true;
+        emit WorkflowNameAllowlistUpdated(workflowName, allowed);
+    }
+
+    function setAllowedWorkflowOwner(address workflowOwner, bool allowed) external onlyOwner {
+        if (workflowOwner == address(0)) revert ZeroAddress();
+        allowedWorkflowOwners[workflowOwner] = allowed;
+        if (allowed) workflowOwnerAllowlistActive = true;
+        emit WorkflowOwnerAllowlistUpdated(workflowOwner, allowed);
+    }
+
+    function clearWorkflowAllowlistFlags() external onlyOwner {
+        workflowIdAllowlistActive = false;
+        workflowNameAllowlistActive = false;
+        workflowOwnerAllowlistActive = false;
+    }
+
     function setCreForwarder(address forwarder) external onlyOwner {
         if (forwarder == address(0)) revert ZeroAddress();
         creForwarder = forwarder;
     }
 
+    /// @inheritdoc IERC165
+    function supportsInterface(bytes4 interfaceId) external pure returns (bool) {
+        return interfaceId == type(IReceiver).interfaceId || interfaceId == type(IERC165).interfaceId;
+    }
+
     /// @inheritdoc IReceiver
-    function onReport(bytes calldata, bytes calldata report) external whenNotPaused nonReentrant {
+    function onReport(bytes calldata metadata, bytes calldata report) external whenNotPaused nonReentrant {
         if (msg.sender != creForwarder) revert NotAuthorized();
+        CreReportAuth.assertMetadata(
+            metadata,
+            workflowIdAllowlistActive,
+            workflowNameAllowlistActive,
+            workflowOwnerAllowlistActive,
+            allowedWorkflowIds,
+            allowedWorkflowNames,
+            allowedWorkflowOwners
+        );
         CreReportAuth.assertLaneControllerReport(report);
         bytes4 selector = bytes4(report[:4]);
         if (selector == bytes4(keccak256("distributePrizes(uint256)"))) {
@@ -196,6 +276,10 @@ contract LaneController is LaneControllerPausable, ILaneController, IReceiver, R
         }
         if (selector == bytes4(keccak256("sweepUnclaimed(uint256)"))) {
             _sweepUnclaimed(abi.decode(report[4:], (uint256)));
+            return;
+        }
+        if (selector == bytes4(keccak256("abortRace(uint256)"))) {
+            _abortRace(abi.decode(report[4:], (uint256)));
             return;
         }
         (bool ok,) = address(this).call(report);
@@ -217,6 +301,15 @@ contract LaneController is LaneControllerPausable, ILaneController, IReceiver, R
     function createRound(uint64[][] calldata lanePaths) external onlyCreOrOwner whenNotPaused returns (uint256 roundId) {
         require(lanePaths.length > 1 && lanePaths.length < type(uint8).max, "bad lane count");
 
+        if (currentRoundId > 0) {
+            RoundState prior = s_rounds[currentRoundId].state;
+            if (
+                prior == RoundState.Betting || prior == RoundState.Racing || prior == RoundState.Finished
+            ) {
+                revert ActiveRoundInProgress();
+            }
+        }
+
         uint256 availableAt = uint256(lastRoundCreatedAt) + roundCooldown;
         if (block.timestamp < availableAt) revert RoundCooldownActive(availableAt);
         lastRoundCreatedAt = uint48(block.timestamp);
@@ -229,6 +322,9 @@ contract LaneController is LaneControllerPausable, ILaneController, IReceiver, R
         round.winningLaneId = NO_LANE;
         round.runnerUpLaneId = NO_LANE;
         round.winnerPayoutLaneId = NO_LANE;
+        round.minBetSnapshot = minBet;
+        round.createdAt = uint48(block.timestamp);
+        round.raceAbandonTimeoutSnapshot = raceAbandonTimeout;
 
         for (uint8 i = 0; i < laneCount; i++) {
             uint64[] calldata path = lanePaths[i];
@@ -247,9 +343,8 @@ contract LaneController is LaneControllerPausable, ILaneController, IReceiver, R
         onlyRound(roundId)
         whenNotPaused
     {
-        if (amount == 0 || amount < minBet) revert InvalidAmount();
-
         Round storage round = s_rounds[roundId];
+        if (amount == 0 || amount < round.minBetSnapshot) revert InvalidAmount();
         if (round.state != RoundState.Betting) revert BettingClosed();
         if (laneId >= round.laneCount) revert InvalidLane();
 
@@ -265,6 +360,9 @@ contract LaneController is LaneControllerPausable, ILaneController, IReceiver, R
         Round storage round = s_rounds[roundId];
         if (round.state != RoundState.Betting) revert InvalidState();
         round.state = RoundState.Racing;
+        round.racingStartedAt = uint48(block.timestamp);
+        round.lastHopAt = uint48(block.timestamp);
+        // Keep raceAbandonTimeoutSnapshot from createRound — do not overwrite after bets.
         emit RaceStarted(roundId);
     }
 
@@ -291,6 +389,7 @@ contract LaneController is LaneControllerPausable, ILaneController, IReceiver, R
         hopsCompleted++;
         lane.hopsCompleted = hopsCompleted;
         lane.totalLatency += latency;
+        round.lastHopAt = uint48(block.timestamp);
 
         emit HopCompleted(roundId, laneId, chainSelector, latency, hopsCompleted);
 
@@ -326,8 +425,71 @@ contract LaneController is LaneControllerPausable, ILaneController, IReceiver, R
         emit WinnerDeclared(roundId, laneId, lane.finishTime);
     }
 
-    function distributePrizes(uint256 roundId) external onlyCreOrOwner onlyRound(roundId) whenNotPaused nonReentrant {
+    /// @notice Settle a Finished round once the runner-up is resolved.
+    /// @dev Permissionless when `Finished` and runner-up resolved; CRE/owner may call anytime eligible.
+    function distributePrizes(uint256 roundId) external onlyRound(roundId) whenNotPaused nonReentrant {
+        Round storage round = s_rounds[roundId];
+        bool privileged = msg.sender == creForwarder || msg.sender == owner() || msg.sender == address(this);
+        if (!privileged && round.state != RoundState.Finished) revert NotAuthorized();
         _distributePrizes(roundId);
+    }
+
+    /// @notice Abort a stuck Betting/Racing round after idle abandon timeout so bettors can `claimRefund`.
+    /// @dev Permissionless once timed out (works while paused). CRE/owner may abort early via onReport/`onlyCreOrOwner`.
+    function abortRace(uint256 roundId) external onlyRound(roundId) nonReentrant {
+        Round storage round = s_rounds[roundId];
+        bool privileged = msg.sender == creForwarder || msg.sender == owner() || msg.sender == address(this);
+        if (!privileged && !_raceAbortTimedOut(round)) revert RaceNotAbortable();
+        _abortRace(roundId);
+    }
+
+    /// @notice Whether a Betting/Racing round may be permissionlessly aborted (idle past snapshot timeout).
+    function isRaceAbortable(uint256 roundId) external view onlyRound(roundId) returns (bool) {
+        Round storage round = s_rounds[roundId];
+        if (round.state != RoundState.Betting && round.state != RoundState.Racing) return false;
+        if (round.winnerDeclared || round.prizesDistributed) return false;
+        return _raceAbortTimedOut(round);
+    }
+
+    function _abortRace(uint256 roundId) internal onlyRound(roundId) {
+        Round storage round = s_rounds[roundId];
+        if (round.state != RoundState.Betting && round.state != RoundState.Racing) revert InvalidState();
+        if (round.winnerDeclared || round.prizesDistributed) revert InvalidState();
+        round.state = RoundState.Aborted;
+        emit RaceAborted(roundId);
+    }
+
+    function _raceAbortTimedOut(Round storage round) internal view returns (bool) {
+        uint48 timeout = round.raceAbandonTimeoutSnapshot;
+        if (timeout == 0) return false;
+        if (round.state == RoundState.Betting) {
+            return block.timestamp > uint256(round.createdAt) + timeout;
+        }
+        if (round.state == RoundState.Racing && !round.winnerDeclared) {
+            // Idle clock: last hop activity, else race start — not wall-clock from start alone.
+            uint256 anchor = round.lastHopAt != 0 ? uint256(round.lastHopAt) : uint256(round.racingStartedAt);
+            return block.timestamp > anchor + timeout;
+        }
+        return false;
+    }
+
+    /// @notice Pull full stake back after `abortRace`.
+    function claimRefund(uint256 roundId) external onlyRound(roundId) nonReentrant returns (uint256 amount) {
+        Round storage round = s_rounds[roundId];
+        if (round.state != RoundState.Aborted) revert NotAborted();
+
+        uint8 laneCount = round.laneCount;
+        for (uint8 i = 0; i < laneCount; ++i) {
+            uint256 bet = round.bets[i][msg.sender];
+            if (bet == 0) continue;
+            round.bets[i][msg.sender] = 0;
+            round.lanePool[i] -= bet;
+            amount += bet;
+        }
+        if (amount == 0) revert NothingToClaim();
+        round.totalPrizePool -= amount;
+        bettingToken.transferExact(msg.sender, amount);
+        emit RefundClaimed(roundId, msg.sender, amount);
     }
 
     function _distributePrizes(uint256 roundId) internal onlyRound(roundId) {
@@ -349,7 +511,7 @@ contract LaneController is LaneControllerPausable, ILaneController, IReceiver, R
         uint256 winnerShare;
         uint8 payoutLaneId = _winnerPayoutLane(round, winningLaneId);
 
-        if (payoutLaneId != NO_LANE && _lanePoolEligible(round.lanePool[payoutLaneId])) {
+        if (payoutLaneId != NO_LANE && _lanePoolEligible(round, round.lanePool[payoutLaneId])) {
             winnerShare = payout.winner;
             round.winnerShare = winnerShare;
             round.winnerPayoutLaneId = payoutLaneId;
@@ -357,7 +519,7 @@ contract LaneController is LaneControllerPausable, ILaneController, IReceiver, R
             platformAmount += payout.winner;
         }
 
-        if (runnerUpLaneId != NO_LANE && _lanePoolEligible(round.lanePool[runnerUpLaneId])) {
+        if (runnerUpLaneId != NO_LANE && _lanePoolEligible(round, round.lanePool[runnerUpLaneId])) {
             round.runnerUpShare = payout.runnerUp;
         } else {
             platformAmount += payout.runnerUp;
@@ -491,24 +653,14 @@ contract LaneController is LaneControllerPausable, ILaneController, IReceiver, R
         return true;
     }
 
-    function _lanePoolEligible(uint256 pool) internal view returns (bool) {
-        return pool >= minBet;
+    function _lanePoolEligible(Round storage round, uint256 pool) internal view returns (bool) {
+        return pool >= round.minBetSnapshot;
     }
 
+    /// @dev Eligible winner lane keeps the share; otherwise winner share goes to the platform (not another lane).
     function _winnerPayoutLane(Round storage round, uint8 winningLaneId) internal view returns (uint8) {
-        if (_lanePoolEligible(round.lanePool[winningLaneId])) return winningLaneId;
-
-        uint8 bestLane = NO_LANE;
-        uint256 bestPool;
-        for (uint8 i = 0; i < round.laneCount; ++i) {
-            if (i == winningLaneId) continue;
-            uint256 pool = round.lanePool[i];
-            if (_lanePoolEligible(pool) && pool > bestPool) {
-                bestPool = pool;
-                bestLane = i;
-            }
-        }
-        return bestLane;
+        if (_lanePoolEligible(round, round.lanePool[winningLaneId])) return winningLaneId;
+        return NO_LANE;
     }
 
     function getRoundWinner(uint256 roundId) external view onlyRound(roundId) returns (uint8 winnerLaneId) {
@@ -529,6 +681,20 @@ contract LaneController is LaneControllerPausable, ILaneController, IReceiver, R
 
     function getRoundState(uint256 roundId) external view returns (RoundState) {
         return s_rounds[roundId].state;
+    }
+
+    function getRoundMinBet(uint256 roundId) external view onlyRound(roundId) returns (uint256) {
+        return s_rounds[roundId].minBetSnapshot;
+    }
+
+    function getRoundClaimInfo(uint256 roundId)
+        external
+        view
+        onlyRound(roundId)
+        returns (uint48 settledAt, uint48 claimWindowSnapshot, bool claimsSwept, bool prizesDistributed)
+    {
+        Round storage round = s_rounds[roundId];
+        return (round.settledAt, round.claimWindowSnapshot, round.claimsSwept, round.prizesDistributed);
     }
 
     function getTotalPrizePool(uint256 roundId) external view returns (uint256) {

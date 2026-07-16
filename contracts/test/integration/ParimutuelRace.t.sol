@@ -149,7 +149,7 @@ contract ParimutuelRaceTest is Test {
         controller.startRace(roundId);
 
         vm.prank(cre);
-        vm.expectRevert(abi.encodeWithSelector(LaneExecutor.UnknownDestination.selector, uint64(999)));
+        vm.expectRevert(abi.encodeWithSelector(LaneExecutor.InvalidHopDestination.selector, uint64(999)));
         executor.sendHop(roundId, 0, 999);
     }
 

@@ -298,6 +298,8 @@ export DEPLOYER=$(cast wallet address --account laneDeployer)
 
 # Per chain: DEPLOY_CHAIN=sepolia|arbitrum-sepolia|base-sepolia
 # VRF_SUBSCRIPTION_ID=<per-chain-id>
+# Required unless local: CRE_WORKFLOW_OWNER and/or CRE_WORKFLOW_ID
+# (or CRE_ALLOWLIST_OPTIONAL=true for local-only deploys)
 forge script script/DeployAll.s.sol:DeployAll \
   --rpc-url $SEPOLIA_RPC \
   --account laneDeployer \

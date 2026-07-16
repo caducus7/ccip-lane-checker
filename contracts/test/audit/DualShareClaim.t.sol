@@ -6,7 +6,7 @@ import {LaneController} from "../../src/core/LaneController.sol";
 import {PrizeCalculator} from "../../src/libraries/PrizeCalculator.sol";
 import {MockERC20} from "../../src/mocks/MockERC20.sol";
 
-/// @notice Audit finding 2: empty-winner redirect must not orphan runner-up share on same lane.
+/// @notice Empty-winner: winner share to platform; runner-up share still claimable.
 contract DualShareClaimTest is Test {
     LaneController public controller;
     MockERC20 public token;
@@ -65,15 +65,17 @@ contract DualShareClaimTest is Test {
         controller.distributePrizes(roundId);
     }
 
-    function test_emptyWinner_bettorClaimsWinnerAndRunnerUp() public {
+    function test_emptyWinner_bettorClaimsRunnerUpOnly() public {
         uint256 roundId = _setupEmptyWinnerRound();
         PrizeCalculator.Payout memory p = PrizeCalculator.calculate(200e6);
+
+        assertEq(token.balanceOf(treasury), p.platform + p.winner);
 
         vm.prank(player);
         uint256 claimed = controller.claimPrize(roundId);
 
-        assertEq(claimed, p.winner + p.runnerUp, "bettor must receive winner + runner-up on same lane");
-        assertEq(claimed, 150e6);
+        assertEq(claimed, p.runnerUp, "bettor receives runner-up only; winner share already at platform");
+        assertEq(claimed, 10e6);
     }
 
     function test_emptyWinner_runnerUpNotSweptToTreasury() public {
@@ -81,12 +83,12 @@ contract DualShareClaimTest is Test {
         PrizeCalculator.Payout memory p = PrizeCalculator.calculate(200e6);
 
         uint256 treasuryAfterDistribute = token.balanceOf(treasury);
-        assertEq(treasuryAfterDistribute, p.platform);
+        assertEq(treasuryAfterDistribute, p.platform + p.winner);
 
         vm.prank(player);
         controller.claimPrize(roundId);
 
-        assertEq(token.balanceOf(treasury), treasuryAfterDistribute, "treasury must not absorb runner-up share");
+        assertEq(token.balanceOf(treasury), treasuryAfterDistribute, "treasury must not absorb claimed runner-up");
 
         vm.warp(block.timestamp + controller.claimWindow() + 1);
         vm.prank(cre);

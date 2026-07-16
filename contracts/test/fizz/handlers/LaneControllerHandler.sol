@@ -18,6 +18,14 @@ abstract contract LaneControllerHandler is Properties {
   // ――――――――――――――――――――――――― Clamped ――――――――――――――――――――――――――
 
   function controller_createRound(uint256) public asCre {
+    uint256 cur = controller.currentRoundId();
+    if (cur > 0) {
+      LaneController.RoundState s = controller.getRoundState(cur);
+      if (
+        s == LaneController.RoundState.Betting || s == LaneController.RoundState.Racing
+          || s == LaneController.RoundState.Finished
+      ) return;
+    }
     uint256 roundId = controller.createRound(_twoLanePaths());
     _trackRound(roundId);
   }
@@ -105,7 +113,7 @@ abstract contract LaneControllerHandler is Properties {
     AdminAction action = AdminAction(actionSeed % 6);
     if (action == AdminAction.Pause) controller.pause();
     else if (action == AdminAction.Unpause) controller.unpause();
-    else if (action == AdminAction.ZeroClaimWindow) controller.setClaimWindow(0);
+    else if (action == AdminAction.ZeroClaimWindow) controller.setClaimWindow(1);
     else if (action == AdminAction.ExtendClaimWindow) controller.setClaimWindow(14 days);
     else if (action == AdminAction.ZeroRunnerUpTimeout) controller.setRunnerUpSettlementTimeout(0);
     else controller.setRunnerUpSettlementTimeout(14 days);
