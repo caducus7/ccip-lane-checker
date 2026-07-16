@@ -204,7 +204,7 @@ Update `config.staging.json` addresses before broadcasting.
 
 ## Configuration
 
-Each workflow ships a pre-filled `config.staging.json` with placeholder contract addresses (`0x0000000000000000000000000000000000000001`) and chain metadata aligned to [`contracts/deployments/testnet.json`](../contracts/deployments/testnet.json). JSON cannot hold comments — field meanings and post-deploy steps are documented below.
+Each workflow ships a pre-filled `config.staging.json` with **live Sepolia demo addresses** from [`contracts/deployments/testnet.json`](../contracts/deployments/testnet.json). JSON cannot hold comments — field meanings and post-deploy steps are documented below.
 
 ### Staging config fill guide
 
@@ -225,20 +225,26 @@ Each workflow ships a pre-filled `config.staging.json` with placeholder contract
 | `lanePaths` | CCIP selectors for 3-chain race paths | Usually unchanged; matches deployed lane topology |
 | `schedule`, `gasLimit` | CRON + gas | Tune for staging load |
 
-#### `hop-sender` (`cre/lane-checker-cre/hop-sender/config.staging.json`)
+#### `hop-sender` (`cre/lane-checker-cre/hop-sender/`)
 
-Deploy **one workflow instance per chain** (separate CRE deployment). Staging file targets the **origin** (Ethereum Sepolia).
+Deploy **one workflow instance per chain** (separate CRE deployment). Use the config file listed in `testnet.json` → `chains.<key>.deploy.hopSenderCreConfig`.
 
-| Field | Staging value | Fill post-deploy |
-|-------|---------------|------------------|
-| `laneControllerAddress` | `0x00…01` | Sepolia `LaneController` |
-| `laneExecutorAddress` | `0x00…01` | **This chain's** `LaneExecutor` |
-| `controllerChainSelectorName` | `ethereum-testnet-sepolia` | Fixed for Sepolia-origin instance |
-| `executorChainSelectorName` | `ethereum-testnet-sepolia` | CRE name for the chain this instance runs on |
-| `isOriginChain` | `true` on Sepolia; `false` on Arbitrum/Base | CRON sends initial hops only on origin |
+| Chain | Config file | `isOriginChain` | `executorChainSelectorName` |
+|-------|-------------|-----------------|----------------------------|
+| Ethereum Sepolia | `config.staging.json` | `true` | `ethereum-testnet-sepolia` |
+| Arbitrum Sepolia | `config.staging.arbitrum-sepolia.json` | `false` | `ethereum-testnet-sepolia-arbitrum-1` |
+| Base Sepolia | `config.staging.base-sepolia.json` | `false` | `ethereum-testnet-sepolia-base-1` |
+
+| Field | Fill post-deploy |
+|-------|------------------|
+| `laneControllerAddress` | Sepolia `LaneController` (canonical home chain) |
+| `laneExecutorAddress` | **This chain's** `LaneExecutor` |
+| `controllerChainSelectorName` | `ethereum-testnet-sepolia` (fixed) |
+| `executorChainSelectorName` | CRE name for the chain this instance runs on (see table) |
+| `isOriginChain` | `true` on Sepolia only; CRON sends initial hops on origin |
 | `laneCount` | `2` | Match `round-scheduler` `lanePaths.length` |
 
-For Arbitrum Sepolia / Base Sepolia instances: set `executorChainSelectorName` to the matching CRE name, `isOriginChain` to `false`, and `laneExecutorAddress` to that chain's deployed executor.
+For Arbitrum Sepolia / Base Sepolia instances: copy the matching `config.staging.*.json`, set `laneExecutorAddress` to that chain's deployed executor, `isOriginChain` to `false`, and deploy as a separate CRE workflow.
 
 #### `hop-monitor` (`cre/lane-checker-cre/hop-monitor/config.staging.json`)
 

@@ -1,8 +1,12 @@
 {
   "$schema": "./testnet.schema.json",
-  "version": "1.1.0",
-  "updatedAt": null,
-  "notes": "Fill deployed addresses after running DeployAll.s.sol on each chain. Infra addresses are canonical Chainlink testnet values. creForwarder values are CRE KeystoneForwarder addresses (verify at docs.chain.link CRE forwarder directory).",
+  "version": "1.2.0",
+  "updatedAt": "2026-07-08T13:55:00Z",
+  "notes": "Phases 1–3 complete (deploy, wiring, VRF+funding). Next: CRE DON deploy (Phase 4) and smoke tests (Phase 5). Operator UI + scripts/manual-parimutuel-smoke.sh can run Phase 5 without CRE.",
+  "deployDefaults": {
+    "keystoreAccount": "laneDeployer",
+    "forgeBroadcastFlags": ["--account", "laneDeployer", "--sender", "${DEPLOYER}"]
+  },
   "chains": {
     "ethereum-sepolia": {
       "chainId": 11155111,
@@ -12,24 +16,44 @@
         "linkToken": "0x779877A7B0D9E8603169DdbD7836e478b4624789",
         "vrfCoordinator": "0x9DdfaCa8183c41ad55329BdeeD9F6A8d53168B1B",
         "vrfKeyHash": "0x787d74caea10b2b357790d5b5247c2f63d1d91572a9846f780606e4d953677ae",
-        "vrfSubscriptionId": null,
+        "vrfSubscriptionId": "114496040760340311702188860983573875803131937811692154242012246145677357446012",
         "creForwarder": "0xF8344CFd5c43616a4366C34E3EEE75af79a74482"
       },
       "contracts": {
-        "LaneToken": null,
-        "LaneController": null,
-        "LaneExecutor": null
+        "LaneToken": "0xa159214985Bbb3f7e7A0F986C723262914150ac7",
+        "LaneController": "0xf7a6CAa15Fa51d30439e32E220A507F04611544a",
+        "LaneExecutor": "0xbd8b72eB19Fea6e25597F40a63Ea1DeF3C600990"
       },
       "wiring": {
         "creForwarder": "0xF8344CFd5c43616a4366C34E3EEE75af79a74482",
-        "hopRecorder": null,
+        "hopRecorder": "0xbd8b72eB19Fea6e25597F40a63Ea1DeF3C600990",
         "remoteExecutors": {
-          "3478487238524512106": null,
-          "10344971235874465080": null
+          "3478487238524512106": "0xa159214985Bbb3f7e7A0F986C723262914150ac7",
+          "10344971235874465080": "0xf2682e839FD4aC8bA60081710ce8689CCcc7e803"
         },
         "remoteLaneTokens": {
-          "3478487238524512106": null,
-          "10344971235874465080": null
+          "3478487238524512106": "0xEA516c219A6Cc6A10a48a186B59Ed2c0240af2Fb",
+          "10344971235874465080": "0xbd8b72eB19Fea6e25597F40a63Ea1DeF3C600990"
+        }
+      },
+      "deploy": {
+        "deployChain": "sepolia",
+        "rpcEnv": "SEPOLIA_RPC",
+        "forgeVerifyChain": "sepolia",
+        "creChainSelectorName": "ethereum-testnet-sepolia",
+        "isHomeChain": true,
+        "nativeFundExecutorEth": "0.05",
+        "nativeFundLaneTokenEth": "0.02",
+        "hopSenderCreConfig": "cre/lane-checker-cre/hop-sender/config.staging.json",
+        "wirePhaseRemoteEnv": {
+          "executors": [
+            "REMOTE_EXECUTOR_ARBITRUM_SEPOLIA",
+            "REMOTE_EXECUTOR_BASE_SEPOLIA"
+          ],
+          "laneTokens": [
+            "REMOTE_LANE_TOKEN_ARBITRUM_SEPOLIA",
+            "REMOTE_LANE_TOKEN_BASE_SEPOLIA"
+          ]
         }
       }
     },
@@ -41,24 +65,44 @@
         "linkToken": "0xb1D4538B4571d411F07960EF2838Ce337FE1E80E",
         "vrfCoordinator": "0x5CE8D5A2BC84beb22a398CCA51996F7930313D61",
         "vrfKeyHash": "0x1770bdc7eec7771f7ba4ffd640f34260d7f095b79c92d34a5b2551d6f6cfd2be",
-        "vrfSubscriptionId": null,
+        "vrfSubscriptionId": "108336839837077700132270335744709695755115414660006804205871752157119533884063",
         "creForwarder": "0x76c9cf548b4179F8901cda1f8623568b58215E62"
       },
       "contracts": {
-        "LaneToken": null,
-        "LaneController": null,
-        "LaneExecutor": null
+        "LaneToken": "0xEA516c219A6Cc6A10a48a186B59Ed2c0240af2Fb",
+        "LaneController": "0x235850c89c599f80359cE09DC9A29f15DcddaA05",
+        "LaneExecutor": "0xa159214985Bbb3f7e7A0F986C723262914150ac7"
       },
       "wiring": {
         "creForwarder": "0x76c9cf548b4179F8901cda1f8623568b58215E62",
-        "hopRecorder": null,
+        "hopRecorder": "0xa159214985Bbb3f7e7A0F986C723262914150ac7",
         "remoteExecutors": {
-          "16015286601757825753": null,
-          "10344971235874465080": null
+          "16015286601757825753": "0xbd8b72eB19Fea6e25597F40a63Ea1DeF3C600990",
+          "10344971235874465080": "0xf2682e839FD4aC8bA60081710ce8689CCcc7e803"
         },
         "remoteLaneTokens": {
-          "16015286601757825753": null,
-          "10344971235874465080": null
+          "16015286601757825753": "0xa159214985Bbb3f7e7A0F986C723262914150ac7",
+          "10344971235874465080": "0xbd8b72eB19Fea6e25597F40a63Ea1DeF3C600990"
+        }
+      },
+      "deploy": {
+        "deployChain": "arbitrum-sepolia",
+        "rpcEnv": "ARBITRUM_SEPOLIA_RPC",
+        "forgeVerifyChain": "arbitrum_sepolia",
+        "creChainSelectorName": "ethereum-testnet-sepolia-arbitrum-1",
+        "isHomeChain": false,
+        "nativeFundExecutorEth": "0.02",
+        "nativeFundLaneTokenEth": "0.01",
+        "hopSenderCreConfig": "cre/lane-checker-cre/hop-sender/config.staging.arbitrum-sepolia.json",
+        "wirePhaseRemoteEnv": {
+          "executors": [
+            "REMOTE_EXECUTOR_SEPOLIA",
+            "REMOTE_EXECUTOR_BASE_SEPOLIA"
+          ],
+          "laneTokens": [
+            "REMOTE_LANE_TOKEN_SEPOLIA",
+            "REMOTE_LANE_TOKEN_BASE_SEPOLIA"
+          ]
         }
       }
     },
@@ -70,24 +114,44 @@
         "linkToken": "0xE4aB69C077896252FAFBD49EFD26B5D171A32410",
         "vrfCoordinator": "0x5C210eF41CD1a72de73bF76eC39637bB0d3d7BEE",
         "vrfKeyHash": "0x9e1344a1247c8a1785d0a4681a27152bffdb43666ae5bf7d14d24a5efd44bf71",
-        "vrfSubscriptionId": null,
+        "vrfSubscriptionId": "85404248917040441829915491214798511177916669691102755180706154079762176384237",
         "creForwarder": "0xF8344CFd5c43616a4366C34E3EEE75af79a74482"
       },
       "contracts": {
-        "LaneToken": null,
-        "LaneController": null,
-        "LaneExecutor": null
+        "LaneToken": "0xbd8b72eB19Fea6e25597F40a63Ea1DeF3C600990",
+        "LaneController": "0xe8b6dE69e640cfc29672860edDd0e8BA3406F3E1",
+        "LaneExecutor": "0xf2682e839FD4aC8bA60081710ce8689CCcc7e803"
       },
       "wiring": {
         "creForwarder": "0xF8344CFd5c43616a4366C34E3EEE75af79a74482",
-        "hopRecorder": null,
+        "hopRecorder": "0xf2682e839FD4aC8bA60081710ce8689CCcc7e803",
         "remoteExecutors": {
-          "16015286601757825753": null,
-          "3478487238524512106": null
+          "16015286601757825753": "0xbd8b72eB19Fea6e25597F40a63Ea1DeF3C600990",
+          "3478487238524512106": "0xa159214985Bbb3f7e7A0F986C723262914150ac7"
         },
         "remoteLaneTokens": {
-          "16015286601757825753": null,
-          "3478487238524512106": null
+          "16015286601757825753": "0xa159214985Bbb3f7e7A0F986C723262914150ac7",
+          "3478487238524512106": "0xEA516c219A6Cc6A10a48a186B59Ed2c0240af2Fb"
+        }
+      },
+      "deploy": {
+        "deployChain": "base-sepolia",
+        "rpcEnv": "BASE_SEPOLIA_RPC",
+        "forgeVerifyChain": "base_sepolia",
+        "creChainSelectorName": "ethereum-testnet-sepolia-base-1",
+        "isHomeChain": false,
+        "nativeFundExecutorEth": "0.02",
+        "nativeFundLaneTokenEth": "0.01",
+        "hopSenderCreConfig": "cre/lane-checker-cre/hop-sender/config.staging.base-sepolia.json",
+        "wirePhaseRemoteEnv": {
+          "executors": [
+            "REMOTE_EXECUTOR_SEPOLIA",
+            "REMOTE_EXECUTOR_ARBITRUM_SEPOLIA"
+          ],
+          "laneTokens": [
+            "REMOTE_LANE_TOKEN_SEPOLIA",
+            "REMOTE_LANE_TOKEN_ARBITRUM_SEPOLIA"
+          ]
         }
       }
     }

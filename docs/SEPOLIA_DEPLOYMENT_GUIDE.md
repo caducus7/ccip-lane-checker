@@ -8,6 +8,26 @@ Start-to-finish guide: wallet setup in the terminal, deploy on **Ethereum Sepoli
 
 ---
 
+## Deployment status (live testnet)
+
+**Phases 1–2 complete.** Deployer `0x8F83Beb482B95C344cd2FAfb2E2964fabe482483` (keystore `laneDeployer`).
+
+| Phase | Status |
+|-------|--------|
+| Deploy contracts (3 chains) | ✅ |
+| Cross-chain peer wiring | ✅ |
+| VRF + funding | ✅ |
+| CRE workflows | ⬜ **Next** |
+| Smoke tests | ⬜ |
+
+**Operational checklist (current work):** [DEPLOY_TESTNET.md](./DEPLOY_TESTNET.md) — Phase 4 (CRE) and Phase 5 (smoke). Operator UI + `scripts/manual-parimutuel-smoke.sh` work without a CRE DON.
+
+**Home controller (Sepolia):** `0xf7a6CAa15Fa51d30439e32E220A507F04611544a`
+
+Steps 3–4 below are **reference** for how deploy/wire was done. Skip to **Step 5** (CRE) or run the Phase 5 smoke path in `DEPLOY_TESTNET.md`.
+
+---
+
 ## What you will deploy
 
 | Chain | Contracts |
@@ -107,15 +127,25 @@ cast wallet import deployer --interactive
 Verify and fund:
 
 ```bash
-cast wallet address deployer
+cast wallet address --account deployer
 # 0xYourDeployerAddress
 ```
 
-Use with Forge via `--account` and password (DeployAll reads `PRIVATE_KEY` by default, so either export from keystore or use Option C):
+Use with Forge via `--account` (no `PRIVATE_KEY` in env). `cast wallet address` needs `--account`; a bare name is treated as a raw private key.
 
 ```bash
-# Derive key for this session only (prompts for keystore password):
-export PRIVATE_KEY=$(cast wallet private-key deployer)
+export DEPLOYER=$(cast wallet address --account deployer)   # prompts for keystore password
+forge script script/DeployAll.s.sol:DeployAll \
+  --rpc-url $SEPOLIA_RPC \
+  --account deployer \
+  --sender $DEPLOYER \
+  --broadcast --verify -vvvv
+```
+
+Alternatively, export the key for this session only (prompts for keystore password):
+
+```bash
+export PRIVATE_KEY=$(cast wallet decrypt-keystore deployer)
 ```
 
 ### Option C — Import from MetaMask seed phrase
@@ -125,7 +155,7 @@ If you exported a **12/24-word mnemonic** (testnet-only wallet):
 ```bash
 cast wallet import deployer --mnemonic-path "m/44'/60'/0'/0/0" --interactive
 # Paste mnemonic at prompt; set password
-cast wallet address deployer
+cast wallet address --account deployer
 ```
 
 MetaMask default first account uses path `m/44'/60'/0'/0/0`.
@@ -141,13 +171,13 @@ cast wallet import deployer --private-key 0xYOUR_KEY
 
 ```bash
 # Balances (fund if zero)
-cast balance $(cast wallet address deployer) --rpc-url $SEPOLIA_RPC
-cast balance $(cast wallet address deployer) --rpc-url $ARBITRUM_SEPOLIA_RPC
-cast balance $(cast wallet address deployer) --rpc-url $BASE_SEPOLIA_RPC
+cast balance $(cast wallet address --account deployer) --rpc-url $SEPOLIA_RPC
+cast balance $(cast wallet address --account deployer) --rpc-url $ARBITRUM_SEPOLIA_RPC
+cast balance $(cast wallet address --account deployer) --rpc-url $BASE_SEPOLIA_RPC
 
 # Optional treasury addresses (default to deployer if unset)
-export PLATFORM_TREASURY=$(cast wallet address deployer)
-export GAS_RESERVE=$(cast wallet address deployer)
+export PLATFORM_TREASURY=$(cast wallet address --account deployer)
+export GAS_RESERVE=$(cast wallet address --account deployer)
 ```
 
 ---
@@ -177,7 +207,9 @@ From repo root:
 ```bash
 cd contracts
 set -a && source .env && set +a
-export PRIVATE_KEY=...   # if not in .env
+# Keystore path (no PRIVATE_KEY):
+export DEPLOYER=$(cast wallet address --account laneDeployer)
+# Or: export PRIVATE_KEY=...   if using Option A
 ```
 
 ### 3a — Ethereum Sepolia
@@ -188,6 +220,8 @@ export VRF_SUBSCRIPTION_ID=<your-sepolia-sub-id>
 
 forge script script/DeployAll.s.sol:DeployAll \
   --rpc-url $SEPOLIA_RPC \
+  --account laneDeployer \
+  --sender $DEPLOYER \
   --broadcast \
   --verify \
   -vvvv
@@ -207,6 +241,8 @@ export VRF_SUBSCRIPTION_ID=<your-arb-sepolia-sub-id>
 
 forge script script/DeployAll.s.sol:DeployAll \
   --rpc-url $ARBITRUM_SEPOLIA_RPC \
+  --account laneDeployer \
+  --sender $DEPLOYER \
   --broadcast \
   --verify \
   -vvvv
@@ -220,22 +256,27 @@ export VRF_SUBSCRIPTION_ID=<your-base-sepolia-sub-id>
 
 forge script script/DeployAll.s.sol:DeployAll \
   --rpc-url $BASE_SEPOLIA_RPC \
+  --account laneDeployer \
+  --sender $DEPLOYER \
   --broadcast \
   --verify \
+  --slow \
   -vvvv
 ```
 
+If broadcast fails with `gapped-nonce tx from delegated accounts`, check `cast nonce $DEPLOYER --rpc-url $BASE_SEPOLIA_RPC` and retry with `--resume` (Forge saves partial txs under `contracts/broadcast/DeployAll.s.sol/84532/`).
+
 ### 3d — Post-deploy per chain
 
-For **each** chain’s `LaneToken` and `LaneExecutor`:
+For **each** chain’s `LaneToken` and `LaneExecutor` (live addresses in [DEPLOY_TESTNET.md](./DEPLOY_TESTNET.md)):
 
 | Task | How |
 |------|-----|
 | VRF consumer | vrf.chain.link → subscription → Add consumer → `LaneToken` address |
 | Fund VRF sub | Add **5–10 LINK** to subscription |
-| Fund `LaneToken` CCIP | `cast send $LANE_TOKEN --value 0.02ether --rpc-url $RPC --private-key $PRIVATE_KEY` |
-| Fund `LaneExecutor` CCIP | `cast send $LANE_EXECUTOR --value 0.05ether --rpc-url $SEPOLIA_RPC` (0.02 on L2s) |
-| Record addresses | Fill `contracts/deployments/testnet.json` |
+| Fund `LaneToken` CCIP | `cast send <LANE_TOKEN> --value 0.02ether --rpc-url $RPC --account laneDeployer` |
+| Fund `LaneExecutor` CCIP | `cast send <LANE_EXECUTOR> --value 0.05ether --rpc-url $SEPOLIA_RPC --account laneDeployer` (0.02 on L2s) |
+| Record addresses | `contracts/deployments/testnet.json` (already filled) |
 
 Example balance check:
 
@@ -249,10 +290,10 @@ Default `minBet` is `1e6` wei of LINK (tiny on 18-decimal LINK). As owner:
 
 ```bash
 # Example: 0.1 LINK minimum bet
-cast send $LANE_CONTROLLER \
+cast send 0xf7a6CAa15Fa51d30439e32E220A507F04611544a \
   "setMinBet(uint256)" 100000000000000000 \
   --rpc-url $SEPOLIA_RPC \
-  --private-key $PRIVATE_KEY
+  --account laneDeployer
 ```
 
 ---
@@ -276,6 +317,8 @@ export REMOTE_LANE_TOKEN_BASE_SEPOLIA=0x...
 
 forge script script/DeployAll.s.sol:DeployAll \
   --rpc-url $SEPOLIA_RPC \
+  --account laneDeployer \
+  --sender $DEPLOYER \
   --broadcast \
   -vvvv
 ```
@@ -295,6 +338,8 @@ export REMOTE_LANE_TOKEN_BASE_SEPOLIA=0x...
 
 forge script script/DeployAll.s.sol:DeployAll \
   --rpc-url $ARBITRUM_SEPOLIA_RPC \
+  --account laneDeployer \
+  --sender $DEPLOYER \
   --broadcast \
   -vvvv
 ```
@@ -314,6 +359,8 @@ export REMOTE_LANE_TOKEN_ARBITRUM_SEPOLIA=0x...
 
 forge script script/DeployAll.s.sol:DeployAll \
   --rpc-url $BASE_SEPOLIA_RPC \
+  --account laneDeployer \
+  --sender $DEPLOYER \
   --broadcast \
   -vvvv
 ```
@@ -597,7 +644,10 @@ Set `"updatedAt"` to ISO timestamp. Commit **addresses only** — never keys.
 
 | Symptom | Fix |
 |---------|-----|
-| `forge script` fails on `PRIVATE_KEY` | `export PRIVATE_KEY=0x...` or `source .env` |
+| `forge script` fails on `PRIVATE_KEY` | `export DEPLOYER=$(cast wallet address --account laneDeployer)` + `--account laneDeployer --sender $DEPLOYER` |
+| `Failed to decode private key` | Use `cast wallet address --account laneDeployer`, not `cast wallet address laneDeployer` |
+| `default sender` on broadcast | Set `--sender $DEPLOYER` (must match keystore address) |
+| `gapped-nonce tx from delegated accounts` (Base) | Add `--slow`; retry with `--resume`; verify nonce with `cast nonce $DEPLOYER --rpc-url $BASE_SEPOLIA_RPC` |
 | `UnknownDestination` on `sendHop` | Re-run Phase 2 wiring on **sending** chain executor |
 | `UnauthorizedSource` on CCIP receive | Wrong `remoteExecutors` mapping |
 | `NotAuthorized` on CRE write | `creForwarder` not set on controller/executor |
@@ -613,7 +663,9 @@ Set `"updatedAt"` to ISO timestamp. Commit **addresses only** — never keys.
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `PRIVATE_KEY` | Yes | Deployer wallet (hex) |
+| `DEPLOYER` | Keystore path | `cast wallet address --account laneDeployer`; also pass to `--sender` |
+| `KEYSTORE_ACCOUNT` | Keystore path | Foundry keystore name (default `laneDeployer`) |
+| `PRIVATE_KEY` | Alt to keystore | Deployer hex key (omit when using keystore) |
 | `SEPOLIA_RPC` | Yes | Sepolia JSON-RPC |
 | `ARBITRUM_SEPOLIA_RPC` | Yes | Arbitrum Sepolia RPC |
 | `BASE_SEPOLIA_RPC` | Yes | Base Sepolia RPC |

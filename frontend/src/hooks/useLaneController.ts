@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   useAccount,
-  useReadContract,
   useWriteContract,
   useWaitForTransactionReceipt,
 } from "wagmi";
@@ -11,7 +10,8 @@ import { parseUnits } from "viem";
 import {
   erc20Abi,
   getDeploymentByChainId,
-  getLaneControllerAddress,
+  getHomeLaneController,
+  HOME_CHAIN_ID,
   isDeployed,
   laneControllerAbi,
 } from "@/lib/contracts";
@@ -20,94 +20,25 @@ import { useTokenAllowance } from "@/hooks/useTokenAllowance";
 
 export type LaneControllerAction = "approve" | "buy" | "claim" | null;
 
-export function useRoundCounter() {
-  const { chainId } = useAccount();
-  const controller = chainId ? getLaneControllerAddress(chainId) : undefined;
-
-  return useReadContract({
-    address: controller,
-    abi: laneControllerAbi,
-    functionName: "currentRoundId",
-    query: {
-      enabled: isDeployed(controller),
-      refetchInterval: 10_000,
-    },
-  });
-}
-
-export function useRoundState(roundId: bigint | undefined) {
-  const { chainId } = useAccount();
-  const controller = chainId ? getLaneControllerAddress(chainId) : undefined;
-
-  return useReadContract({
-    address: controller,
-    abi: laneControllerAbi,
-    functionName: "getRoundState",
-    args: roundId !== undefined ? [roundId] : undefined,
-    query: {
-      enabled: roundId !== undefined && isDeployed(controller),
-      refetchInterval: 5_000,
-    },
-  });
-}
-
-export function useRoundWinner(roundId: bigint | undefined) {
-  const { chainId } = useAccount();
-  const controller = chainId ? getLaneControllerAddress(chainId) : undefined;
-
-  return useReadContract({
-    address: controller,
-    abi: laneControllerAbi,
-    functionName: "getRoundWinner",
-    args: roundId !== undefined ? [roundId] : undefined,
-    query: {
-      enabled: roundId !== undefined && isDeployed(controller),
-      refetchInterval: 5_000,
-    },
-  });
-}
-
-export function useLanePool(roundId: bigint | undefined, laneId: number) {
-  const { chainId } = useAccount();
-  const controller = chainId ? getLaneControllerAddress(chainId) : undefined;
-
-  return useReadContract({
-    address: controller,
-    abi: laneControllerAbi,
-    functionName: "getLanePool",
-    args: roundId !== undefined ? [roundId, laneId] : undefined,
-    query: {
-      enabled: roundId !== undefined && isDeployed(controller),
-      refetchInterval: 3_000,
-    },
-  });
-}
-
-export function useTotalPrizePool(roundId: bigint | undefined) {
-  const { chainId } = useAccount();
-  const controller = chainId ? getLaneControllerAddress(chainId) : undefined;
-
-  return useReadContract({
-    address: controller,
-    abi: laneControllerAbi,
-    functionName: "getTotalPrizePool",
-    args: roundId !== undefined ? [roundId] : undefined,
-    query: {
-      enabled: roundId !== undefined && isDeployed(controller),
-      refetchInterval: 5_000,
-    },
-  });
-}
+export {
+  useHomeRoundCounter as useRoundCounter,
+  useHomeRoundState as useRoundState,
+  useHomeRoundWinner as useRoundWinner,
+  useHomeLanePool as useLanePool,
+  useHomeTotalPrizePool as useTotalPrizePool,
+  useHomeLane as useLane,
+} from "@/hooks/useHomeLaneController";
 
 export function useLaneControllerActions() {
   const { chainId } = useAccount();
-  const controller = chainId ? getLaneControllerAddress(chainId) : undefined;
-  const deployment = chainId ? getDeploymentByChainId(chainId) : undefined;
-  const bettingToken = deployment?.underlyingToken;
-  const { data: decimals } = useTokenDecimals(bettingToken);
+  const controller = getHomeLaneController();
+  const homeDeployment = getDeploymentByChainId(HOME_CHAIN_ID);
+  const bettingToken = homeDeployment?.underlyingToken;
+  const { data: decimals } = useTokenDecimals(bettingToken, HOME_CHAIN_ID);
   const { data: allowance, refetch: refetchAllowance } = useTokenAllowance(
     bettingToken,
-    controller
+    controller,
+    HOME_CHAIN_ID,
   );
 
   const [pendingAction, setPendingAction] = useState<LaneControllerAction>(null);
@@ -128,6 +59,8 @@ export function useLaneControllerActions() {
   const { isLoading: isConfirming, isSuccess } = useWaitForTransactionReceipt({
     hash,
   });
+
+  const onHomeChain = chainId === HOME_CHAIN_ID;
 
   useEffect(() => {
     if (!isSuccess || !pendingAction) return;
@@ -150,12 +83,14 @@ export function useLaneControllerActions() {
       !bettingToken ||
       !controller ||
       !isDeployed(controller) ||
-      decimals === undefined
+      decimals === undefined ||
+      !onHomeChain
     ) {
       return;
     }
     setPendingAction("approve");
     writeContract({
+      chainId: HOME_CHAIN_ID,
       address: bettingToken,
       abi: erc20Abi,
       functionName: "approve",
@@ -166,13 +101,19 @@ export function useLaneControllerActions() {
   const buyLaneTokens = (
     roundId: bigint,
     laneId: number,
-    amount: string
+    amount: string,
   ) => {
-    if (!controller || !isDeployed(controller) || decimals === undefined) {
+    if (
+      !controller ||
+      !isDeployed(controller) ||
+      decimals === undefined ||
+      !onHomeChain
+    ) {
       return;
     }
     setPendingAction("buy");
     writeContract({
+      chainId: HOME_CHAIN_ID,
       address: controller,
       abi: laneControllerAbi,
       functionName: "buyLaneTokens",
@@ -181,9 +122,10 @@ export function useLaneControllerActions() {
   };
 
   const claimPrize = (roundId: bigint) => {
-    if (!controller || !isDeployed(controller)) return;
+    if (!controller || !isDeployed(controller) || !onHomeChain) return;
     setPendingAction("claim");
     writeContract({
+      chainId: HOME_CHAIN_ID,
       address: controller,
       abi: laneControllerAbi,
       functionName: "claimPrize",
@@ -214,6 +156,8 @@ export function useLaneControllerActions() {
     isDeployed: isDeployed(controller),
     bettingToken,
     decimals,
+    onHomeChain,
+    homeChainId: HOME_CHAIN_ID,
   };
 }
 

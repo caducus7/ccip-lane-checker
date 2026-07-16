@@ -4,17 +4,17 @@ import Link from "next/link";
 import { ActiveRounds } from "@/components/race/ActiveRounds";
 import { LaneHealthSummary } from "@/components/race/LaneHealthSummary";
 import { FeaturedRace } from "@/components/race/FeaturedRace";
+import { OperatorPanel } from "@/components/race/OperatorPanel";
 import { useDeploymentStatus } from "@/hooks/useDeploymentStatus";
 import { useRoundCounter } from "@/hooks/useLaneController";
 
 export function HomeRaceSection() {
   const { anyDeployed } = useDeploymentStatus();
   const { data: currentRoundId } = useRoundCounter();
+  const hasRound = !!currentRoundId && currentRoundId > 0n;
 
   const joinHref =
-    anyDeployed && currentRoundId && currentRoundId > 0n
-      ? `/race/${currentRoundId.toString()}`
-      : "/race/1";
+    anyDeployed && hasRound ? `/race/${currentRoundId.toString()}` : "/race/1";
 
   return (
     <div className="space-y-12">
@@ -54,6 +54,8 @@ export function HomeRaceSection() {
           </Link>
         </div>
       </section>
+
+      {anyDeployed && !hasRound ? <OperatorPanel /> : null}
 
       <FeaturedRace />
 

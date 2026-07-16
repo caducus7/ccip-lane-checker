@@ -2,26 +2,27 @@
 pragma solidity ^0.8.24;
 
 import {Script, console2} from "forge-std/Script.sol";
+import {BroadcastScript} from "./BroadcastScript.sol";
 import {LaneToken} from "../src/core/LaneToken.sol";
 import {ChainConfig} from "../src/libraries/ChainConfig.sol";
 
 /// @title DeployLaneToken
 /// @notice Deploys the solo-mode LaneToken on a testnet from ChainConfig.
-/// @dev Example:
+/// @dev Example (keystore):
+///        export DEPLOYER=$(cast wallet address --account laneDeployer)
 ///        DEPLOY_CHAIN=sepolia VRF_SUBSCRIPTION_ID=<uint256 sub id> \
-///        forge script script/DeployLaneToken.s.sol:DeployLaneToken --rpc-url $SEPOLIA_RPC --broadcast
-contract DeployLaneToken is Script {
+///        forge script script/DeployLaneToken.s.sol:DeployLaneToken \
+///          --rpc-url $SEPOLIA_RPC --account laneDeployer --sender $DEPLOYER --broadcast
+contract DeployLaneToken is BroadcastScript {
     function run() external returns (LaneToken laneToken) {
-        uint256 deployKey = vm.envUint("PRIVATE_KEY");
         string memory chainName = vm.envOr("DEPLOY_CHAIN", string("sepolia"));
         ChainConfig.Network network = ChainConfig.networkFromEnv(chainName);
         ChainConfig.NetworkConfig memory cfg = ChainConfig.getNetworkConfig(network);
 
-        // VRF v2.5 subscription IDs are full uint256 values.
         uint256 vrfSubId = vm.envUint("VRF_SUBSCRIPTION_ID");
         uint256[] memory supportedChains = ChainConfig.supportedChainSelectors();
 
-        vm.startBroadcast(deployKey);
+        _startDeployBroadcast();
         laneToken = new LaneToken(
             cfg.ccipRouter,
             cfg.linkToken,

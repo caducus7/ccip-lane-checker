@@ -117,6 +117,17 @@ export function getLaneControllerAddress(chainId: number): Address | undefined {
   return getDeploymentByChainId(chainId)?.laneController;
 }
 
+/** Parimutuel home chain — bets and round state live on Sepolia. */
+export const HOME_CHAIN_ID = deployments.chains["ethereum-sepolia"].chainId;
+
+export function getHomeLaneController(): Address | undefined {
+  return deployments.chains["ethereum-sepolia"].laneController;
+}
+
+export function getLaneExecutorAddress(chainId: number): Address | undefined {
+  return getDeploymentByChainId(chainId)?.laneExecutor;
+}
+
 export function isDeployed(address: Address | undefined): boolean {
   return !!address && address !== ZERO;
 }
@@ -169,6 +180,7 @@ export const laneControllerAbi = parseAbi([
   "function getLanePool(uint256 roundId, uint8 laneId) external view returns (uint256)",
   "function getTotalPrizePool(uint256 roundId) external view returns (uint256)",
   "function currentRoundId() external view returns (uint256)",
+  "function owner() external view returns (address)",
   "event RoundCreated(uint256 indexed roundId, uint8 laneCount)",
   "event BetPlaced(uint256 indexed roundId, uint8 indexed laneId, address indexed bettor, uint256 amount)",
   "event RaceStarted(uint256 indexed roundId)",
@@ -192,6 +204,12 @@ export const erc20Abi = parseAbi([
   "function allowance(address owner, address spender) external view returns (uint256)",
   "function balanceOf(address account) external view returns (uint256)",
   "function decimals() external view returns (uint8)",
+]);
+
+export const laneExecutorAbi = parseAbi([
+  "function sendHop(uint256 roundId, uint8 laneId, uint64 destChainSelector) external returns (bytes32 messageId)",
+  "event HopSent(bytes32 indexed messageId, uint256 indexed roundId, uint8 indexed laneId, uint64 destChainSelector)",
+  "event HopReceived(uint256 indexed roundId, uint8 indexed laneId, uint64 sourceChainSelector, uint256 latency)",
 ]);
 
 export const ZERO_ADDRESS = ZERO;

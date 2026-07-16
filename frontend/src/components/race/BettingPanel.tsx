@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useSwitchChain } from "wagmi";
 import { formatEther } from "viem";
 import {
   RoundStateLabel,
@@ -11,13 +12,16 @@ import {
   useRoundWinner,
   useTotalPrizePool,
 } from "@/hooks/useLaneController";
+import { useLiveLanes } from "@/hooks/useLiveLanes";
 import { LaneRaceViz } from "@/components/race/LaneRaceViz";
+import { OperatorPanel } from "@/components/race/OperatorPanel";
 import { demoLaneStates } from "@/lib/lane-data";
+import { PARIMUTUEL_LANE_COUNT } from "@/lib/race-paths";
 import { ccipExplorerHome } from "@/lib/ccip";
+import { CHAIN_LABELS } from "@/lib/chains";
 import {
   DeploymentBanner,
   EmptyState,
-  NoActiveRoundState,
 } from "@/components/ui/EmptyState";
 import { RacePageSkeleton } from "@/components/ui/Skeleton";
 import { TxFeedback } from "@/components/ui/TxFeedback";
@@ -26,13 +30,12 @@ interface BettingPanelProps {
   roundId: bigint;
 }
 
-const LANE_LABELS = ["SEP→ARB→SEP", "ARB→SEP→ARB", "SEP→BASE→SEP"];
-
 export function BettingPanel({ roundId }: BettingPanelProps) {
   const [selectedLane, setSelectedLane] = useState(0);
-  const [betAmount, setBetAmount] = useState("0.05");
+  const [betAmount, setBetAmount] = useState("0.2");
   const [claimSuccess, setClaimSuccess] = useState(false);
   const [isClaiming, setIsClaiming] = useState(false);
+  const { switchChainAsync } = useSwitchChain();
 
   const { data: currentRoundId, isLoading: roundCounterLoading } =
     useRoundCounter();
@@ -45,7 +48,7 @@ export function BettingPanel({ roundId }: BettingPanelProps) {
   const { data: totalPrizePool } = useTotalPrizePool(roundId);
   const { data: lane0 } = useLanePool(roundId, 0);
   const { data: lane1 } = useLanePool(roundId, 1);
-  const { data: lane2 } = useLanePool(roundId, 2);
+  const { lanes: liveLanes, isLive } = useLiveLanes(roundId);
 
   const {
     approveBettingToken,
@@ -61,19 +64,21 @@ export function BettingPanel({ roundId }: BettingPanelProps) {
     pendingAction,
     lastCompletedAction,
     needsApproval,
+    onHomeChain,
+    homeChainId,
   } = useLaneControllerActions();
 
-  const laneCount = 3;
   const status =
     roundState !== undefined
       ? (RoundStateLabel[Number(roundState)] ?? "betting")
       : isDeployed
         ? "betting"
         : "racing";
-  const lanePools = [lane0, lane1, lane2];
+  const lanePools = [lane0, lane1];
   const totalPool =
     totalPrizePool ?? lanePools.reduce<bigint>((sum, p) => sum + (p ?? 0n), 0n);
-  const demoLanes = demoLaneStates();
+  const demoLanes = demoLaneStates().slice(0, PARIMUTUEL_LANE_COUNT);
+  const vizLanes = isLive ? liveLanes : demoLanes;
   const isRoundLoading = isDeployed && (roundStateLoading || roundCounterLoading);
   const roundNotFound =
     isDeployed &&
@@ -97,19 +102,6 @@ export function BettingPanel({ roundId }: BettingPanelProps) {
     reset();
   }, [roundId, reset]);
 
-  const vizLanes = lanePools.some((p) => p !== undefined && p > 0n)
-    ? lanePools.map((pool, i) => ({
-        id: i,
-        label: LANE_LABELS[i] ?? `Lane ${i}`,
-        color: demoLanes[i]?.color ?? "#00f5d4",
-        progress: demoLanes[i]?.progress ?? 0,
-        hopsCompleted: demoLanes[i]?.hopsCompleted ?? 0,
-        maxHops: 5,
-        latencySec: demoLanes[i]?.latencySec ?? 0,
-        finished: demoLanes[i]?.finished ?? false,
-      }))
-    : demoLanes;
-
   if (isRoundLoading) {
     return <RacePageSkeleton />;
   }
@@ -129,10 +121,17 @@ export function BettingPanel({ roundId }: BettingPanelProps) {
     return (
       <div className="space-y-6">
         <RoundHeader roundId={roundId} status="unknown" />
+        <OperatorPanel
+          roundId={
+            currentRoundId !== undefined && currentRoundId > 0n
+              ? currentRoundId
+              : undefined
+          }
+        />
         <EmptyState
           variant="error"
           title="Round not found"
-          description={`Round #${roundId.toString()} does not exist on-chain yet. The current round is #${currentRoundId?.toString() ?? "—"}.`}
+          description={`Round #${roundId.toString()} does not exist on-chain yet. The current round is #${currentRoundId?.toString() ?? "—"}. Owners can create a round above.`}
           action={{ label: "Back to home", href: "/" }}
         />
       </div>
@@ -141,7 +140,24 @@ export function BettingPanel({ roundId }: BettingPanelProps) {
 
   return (
     <div className="space-y-5 sm:space-y-6">
-      <RoundHeader roundId={roundId} status={status} />
+      <RoundHeader roundId={roundId} status={status} live={isLive} />
+
+      <OperatorPanel roundId={roundId} />
+
+      {!onHomeChain && (
+        <div className="border border-neon-amber/40 bg-neon-amber/10 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+          <p className="font-mono text-xs text-neon-amber">
+            Switch to {CHAIN_LABELS[homeChainId as keyof typeof CHAIN_LABELS]} to bet or claim.
+          </p>
+          <button
+            type="button"
+            onClick={() => void switchChainAsync({ chainId: homeChainId })}
+            className="shrink-0 px-3 py-2 font-mono text-[10px] uppercase tracking-wider border border-neon-amber text-neon-amber hover:bg-neon-amber/10"
+          >
+            Switch network
+          </button>
+        </div>
+      )}
 
       {winnerLane !== undefined && canClaim && (
         <div className="border border-neon-lime/30 bg-neon-lime/5 px-4 py-3 font-mono text-xs text-neon-lime">
@@ -149,7 +165,10 @@ export function BettingPanel({ roundId }: BettingPanelProps) {
         </div>
       )}
 
-      <LaneRaceViz lanes={vizLanes} title="Multi-Lane Race" />
+      <LaneRaceViz
+        lanes={vizLanes}
+        title={isLive ? "Live Race" : "Multi-Lane Race"}
+      />
 
       <div className="grid gap-5 sm:gap-6 lg:grid-cols-2">
         <div className="border border-grid bg-asphalt-50 p-4 sm:p-5 space-y-4">
@@ -160,7 +179,7 @@ export function BettingPanel({ roundId }: BettingPanelProps) {
             {totalPool > 0n ? `${formatEther(totalPool)} LINK` : "—"}
           </p>
           <p className="font-mono text-[10px] sm:text-xs text-white/40">
-            70% winner · 15% 2nd · 10% 3rd · 5% protocol
+            70% winner · 15% platform · 10% gas · 5% runner-up
           </p>
 
           <ul className="space-y-2 pt-2 border-t border-grid">
@@ -187,8 +206,8 @@ export function BettingPanel({ roundId }: BettingPanelProps) {
             Place <span className="text-neon-cyan">Bet</span>
           </h2>
 
-          <div className="grid grid-cols-3 gap-1.5 sm:gap-2">
-            {Array.from({ length: laneCount }).map((_, i) => (
+          <div className="grid grid-cols-2 gap-1.5 sm:gap-2">
+            {Array.from({ length: PARIMUTUEL_LANE_COUNT }).map((_, i) => (
               <button
                 key={i}
                 type="button"
@@ -213,7 +232,7 @@ export function BettingPanel({ roundId }: BettingPanelProps) {
               inputMode="decimal"
               value={betAmount}
               onChange={(e) => setBetAmount(e.target.value)}
-              disabled={status !== "betting" || isTxBusy}
+              disabled={status !== "betting" || isTxBusy || !onHomeChain}
               className="mt-1 w-full border border-grid bg-asphalt px-3 py-2.5 font-mono text-sm text-white focus:border-neon-cyan outline-none disabled:opacity-40"
             />
           </label>
@@ -221,7 +240,7 @@ export function BettingPanel({ roundId }: BettingPanelProps) {
           {status === "betting" && insufficientAllowance && (
             <button
               type="button"
-              disabled={isTxBusy}
+              disabled={isTxBusy || !onHomeChain}
               onClick={() => approveBettingToken(betAmount)}
               className="w-full py-3 font-mono text-xs sm:text-sm uppercase tracking-[0.2em] border border-neon-amber text-neon-amber hover:bg-neon-amber/10 transition-colors disabled:opacity-40"
             >
@@ -231,7 +250,7 @@ export function BettingPanel({ roundId }: BettingPanelProps) {
             </button>
           )}
 
-          {status === "betting" && !insufficientAllowance && (
+          {status === "betting" && !insufficientAllowance && onHomeChain && (
             <p className="font-mono text-[10px] text-neon-lime/80 uppercase tracking-wider">
               ✓ LINK approved
             </p>
@@ -242,7 +261,8 @@ export function BettingPanel({ roundId }: BettingPanelProps) {
             disabled={
               status !== "betting" ||
               isTxBusy ||
-              insufficientAllowance
+              insufficientAllowance ||
+              !onHomeChain
             }
             onClick={() => buyLaneTokens(roundId, selectedLane, betAmount)}
             className="w-full py-3 font-mono text-xs sm:text-sm uppercase tracking-[0.2em] bg-neon-amber text-asphalt font-bold hover:shadow-[0_0_24px_rgba(255,183,3,0.35)] transition-shadow disabled:opacity-40"
@@ -261,23 +281,18 @@ export function BettingPanel({ roundId }: BettingPanelProps) {
                   <p className="font-mono text-xs text-neon-lime uppercase tracking-wider">
                     Prize claimed successfully
                   </p>
-                  <p className="mt-1 font-mono text-[10px] text-white/50">
-                    Funds sent to your wallet. Check your LINK balance.
-                  </p>
                 </div>
               ) : (
                 <button
                   type="button"
-                  disabled={isTxBusy}
+                  disabled={isTxBusy || !onHomeChain}
                   onClick={() => {
                     setIsClaiming(true);
                     claimPrize(roundId);
                   }}
                   className="w-full py-3 font-mono text-xs sm:text-sm uppercase tracking-[0.2em] border border-neon-cyan text-neon-cyan hover:bg-neon-cyan/10 disabled:opacity-40 transition-colors"
                 >
-                  {isClaiming && isTxBusy
-                    ? "Claiming prize…"
-                    : "Claim Prize"}
+                  {isClaiming && isTxBusy ? "Claiming prize…" : "Claim Prize"}
                 </button>
               )}
             </div>
@@ -305,9 +320,11 @@ export function BettingPanel({ roundId }: BettingPanelProps) {
 function RoundHeader({
   roundId,
   status,
+  live = false,
 }: {
   roundId: bigint;
   status: string;
+  live?: boolean;
 }) {
   return (
     <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
@@ -321,6 +338,11 @@ function RoundHeader({
       </div>
       <div className="flex items-center gap-3 self-start sm:self-auto">
         <StatusPill status={status} />
+        {live && (
+          <span className="font-mono text-[10px] text-neon-lime/70 uppercase">
+            on-chain
+          </span>
+        )}
         <a
           href={ccipExplorerHome()}
           target="_blank"
@@ -339,7 +361,7 @@ function DemoBettingHint() {
     <EmptyState
       variant="info"
       title="Betting unavailable"
-      description="Connect wallet on a deployed testnet chain to place parimutuel bets. Until then, explore the demo race visualization above."
+      description="Connect wallet on Ethereum Sepolia to place parimutuel bets."
     />
   );
 }

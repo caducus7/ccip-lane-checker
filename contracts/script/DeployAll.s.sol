@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import {Script, console2} from "forge-std/Script.sol";
+import {BroadcastScript} from "./BroadcastScript.sol";
 import {LaneToken} from "../src/core/LaneToken.sol";
 import {LaneController} from "../src/core/LaneController.sol";
 import {LaneExecutor} from "../src/core/LaneExecutor.sol";
@@ -13,7 +14,9 @@ import {ChainConfig} from "../src/libraries/ChainConfig.sol";
 ///
 ///      Phase 1 — deploy contracts on each chain (no peer env vars required):
 ///        DEPLOY_CHAIN=sepolia VRF_SUBSCRIPTION_ID=123 PLATFORM_TREASURY=0x... GAS_RESERVE=0x... \
-///        forge script script/DeployAll.s.sol:DeployAll --rpc-url $SEPOLIA_RPC --broadcast
+///        forge script script/DeployAll.s.sol:DeployAll --rpc-url $SEPOLIA_RPC --account deployer \
+///          --sender $(cast wallet address deployer) --broadcast
+///      Or with PRIVATE_KEY: omit --account/--sender and export PRIVATE_KEY=0x...
 ///
 ///      Phase 2 — re-run with peer addresses filled in (or set WIRE_SELF=true on first chain):
 ///        REMOTE_EXECUTOR_ARBITRUM_SEPOLIA=0x... REMOTE_EXECUTOR_BASE_SEPOLIA=0x... \
@@ -23,7 +26,7 @@ import {ChainConfig} from "../src/libraries/ChainConfig.sol";
 ///      Optional overrides:
 ///        CRE_FORWARDER — defaults to ChainConfig.creForwarder for the target network
 ///        WIRE_SELF=true — map this chain's selector to the freshly deployed executor/token
-contract DeployAll is Script {
+contract DeployAll is BroadcastScript {
     struct DeploymentResult {
         address laneToken;
         address laneController;
@@ -32,8 +35,7 @@ contract DeployAll is Script {
     }
 
     function run() external returns (DeploymentResult memory result) {
-        uint256 deployKey = vm.envUint("PRIVATE_KEY");
-        address deployer = vm.addr(deployKey);
+        address deployer = _startDeployBroadcast();
         string memory chainName = vm.envOr("DEPLOY_CHAIN", string("sepolia"));
         ChainConfig.Network network = ChainConfig.networkFromEnv(chainName);
         ChainConfig.NetworkConfig memory cfg = ChainConfig.getNetworkConfig(network);
@@ -44,9 +46,8 @@ contract DeployAll is Script {
         console2.log("Chain ID:", cfg.chainId);
         console2.log("CCIP selector:", cfg.chainSelector);
         console2.log("CRE forwarder:", creForwarder);
+        console2.log("Deployer:", deployer);
         console2.log("Wire only:", wireOnly);
-
-        vm.startBroadcast(deployKey);
 
         if (wireOnly) {
             result.laneToken = vm.envAddress("EXISTING_LANE_TOKEN");

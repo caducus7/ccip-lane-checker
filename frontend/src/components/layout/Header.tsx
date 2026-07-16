@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { ConnectButton } from "@/components/wallet/ConnectButton";
+import { RaceNavLink } from "@/components/layout/RaceNavLink";
 
 const NAV = [
   { href: "/", label: "Pit Lane" },
   { href: "/solo", label: "Solo" },
-  { href: "/race/1", label: "Race" },
+  { label: "Race", race: true as const },
   { href: "/leaderboard", label: "Standings" },
   { href: "/lanes", label: "Benchmarks" },
 ];
@@ -26,30 +27,44 @@ export function Header() {
         </Link>
 
         <nav className="hidden md:flex items-center gap-1">
-          {NAV.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className="px-3 py-2 font-mono text-xs uppercase tracking-wider text-white/60 hover:text-neon-cyan transition-colors"
-            >
-              {item.label}
-            </Link>
-          ))}
+          {NAV.map((item) =>
+            "race" in item ? (
+              <RaceNavLink
+                key="race"
+                className="px-3 py-2 font-mono text-xs uppercase tracking-wider text-white/60 hover:text-neon-cyan transition-colors"
+              />
+            ) : (
+              <Link
+                key={item.href}
+                href={item.href}
+                className="px-3 py-2 font-mono text-xs uppercase tracking-wider text-white/60 hover:text-neon-cyan transition-colors"
+              >
+                {item.label}
+              </Link>
+            ),
+          )}
         </nav>
 
         <ConnectButton />
       </div>
 
       <nav className="flex md:hidden overflow-x-auto border-t border-grid/50 px-2 py-2 gap-1">
-        {NAV.map((item) => (
-          <Link
-            key={item.href}
-            href={item.href}
-            className="shrink-0 px-3 py-1.5 font-mono text-[10px] uppercase tracking-wider text-white/50 hover:text-neon-cyan"
-          >
-            {item.label}
-          </Link>
-        ))}
+        {NAV.map((item) =>
+          "race" in item ? (
+            <RaceNavLink
+              key="race"
+              className="shrink-0 px-3 py-1.5 font-mono text-[10px] uppercase tracking-wider text-white/50 hover:text-neon-cyan"
+            />
+          ) : (
+            <Link
+              key={item.href}
+              href={item.href}
+              className="shrink-0 px-3 py-1.5 font-mono text-[10px] uppercase tracking-wider text-white/50 hover:text-neon-cyan"
+            >
+              {item.label}
+            </Link>
+          ),
+        )}
       </nav>
     </header>
   );

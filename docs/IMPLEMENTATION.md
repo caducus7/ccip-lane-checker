@@ -115,15 +115,15 @@ cre workflow simulate round-scheduler --target staging-settings
 2. [x] `ChainConfig.creForwarder` per network (KeystoneForwarder addresses)
 3. [x] Deployment manifest: `contracts/deployments/testnet.json` (+ schema)
 4. [x] Step-by-step checklist: `docs/DEPLOY_TESTNET.md`
-5. [ ] Register VRF v2.5 subscription per chain; fund with LINK
-6. [ ] Allowlist CCIP lanes between deployed chains (CCIP Directory)
-7. [ ] Deploy contracts on testnet (3 chains)
-8. [ ] Cross-chain peer wiring (`remoteExecutors`, `remoteLaneTokens`, `hopRecorder`)
+5. [x] Register VRF v2.5 subscription per chain; fund with LINK
+6. [x] Allowlist CCIP lanes between deployed chains (CCIP Directory)
+7. [x] Deploy contracts on testnet (3 chains)
+8. [x] Cross-chain peer wiring (`remoteExecutors`, `remoteLaneTokens`, `hopRecorder`)
 9. [ ] Deploy CRE workflows to testnet DON
 10. [ ] Smoke test: solo challenge + one parimutuel round
-11. [ ] Fill live addresses in `contracts/deployments/testnet.json`
+11. [x] Fill live addresses in `contracts/deployments/testnet.json`
 
-**Exit criteria:** Manual E2E race completes on testnet with CRE settlement. **Not yet met.**
+**Exit criteria:** Manual E2E race completes on testnet with CRE settlement. **Not yet met** — operator UI + `scripts/manual-parimutuel-smoke.sh` available as CRE substitute.
 
 ---
 
@@ -144,14 +144,15 @@ cre workflow simulate round-scheduler --target staging-settings
 
 ### Features
 - [x] Wallet connect (Sepolia + Arbitrum Sepolia + Base Sepolia)
-- [ ] Live hop progress via CCIP message status polling (needs testnet deploy)
+- [x] Live hop progress via on-chain `getLane()` polling (3s) + CCIP Explorer links
 - [x] Animated lane race visualization
 - [x] Bet placement + prize pool display + `claimPrize` flow
 - [x] Tx feedback (pending / success / error) + LINK `approve` UX on solo + parimutuel
 - [x] CCIP Explorer deep links (`buildCcipExplorerMessageUrl` in `HopProgress`)
 - [x] `/lanes` dashboard reads `GET /api/lanes` with static fallback
+- [x] Owner **Race Control** panel (create / start / send hops / settle) for testnet without CRE DON
 
-**Exit criteria:** Full solo + parimutuel playable from browser on testnet. **Blocked on Step 4.**
+**Exit criteria:** Full solo + parimutuel playable from browser on testnet. **Ready for operator smoke** (CRE DON optional).
 
 ---
 

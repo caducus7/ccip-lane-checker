@@ -80,10 +80,12 @@ Auth: optional `LANE_BENCHMARK_AUTH_TOKEN` (see `frontend/.env.example`). Storag
 
 See **`docs/DEPLOY_TESTNET.md`** for phased `DeployAll.s.sol` commands (deploy → peer wiring).
 
-- [ ] Fill `contracts/deployments/testnet.json` per chain
-- [ ] Update each CRE workflow `config.staging.json` with controller + executor addresses
-- [ ] Set `creForwarder` on LaneController **and** each LaneExecutor to network KeystoneForwarder
-- [ ] `setHopSender(creForwarder)` on each LaneExecutor (optional if using `onReport` only)
-- [ ] `setHopRecorder(executor)` on LaneController per chain
-- [ ] `setRemoteExecutor` on each executor for peer chains
-- [ ] Fund executors with native token for CCIP fees
+- [x] Fill `contracts/deployments/testnet.json` per chain
+- [x] Update each CRE workflow `config.staging.json` with controller + executor addresses
+- [x] Set `creForwarder` on LaneController **and** each LaneExecutor to network KeystoneForwarder
+- [x] `setHopSender(creForwarder)` on each LaneExecutor (optional if using `onReport` only)
+- [x] `setHopRecorder(executor)` on LaneController per chain
+- [x] `setRemoteExecutor` on each executor for peer chains
+- [x] Fund executors with native token for CCIP fees
+- [ ] `cre workflow simulate` + DON deploy (Phase 4)
+- [ ] Smoke: solo + parimutuel (Phase 5; UI operator panel or `manual-parimutuel-smoke.sh`)

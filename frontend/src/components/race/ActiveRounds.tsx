@@ -11,6 +11,7 @@ import {
 import { useDeploymentStatus } from "@/hooks/useDeploymentStatus";
 import { formatUtcTime } from "@/lib/format-date";
 import { MOCK_ACTIVE_ROUNDS } from "@/lib/lane-data";
+import { PARIMUTUEL_LANE_COUNT } from "@/lib/race-paths";
 import {
   DeploymentBanner,
   NoActiveRoundState,
@@ -73,7 +74,7 @@ export function ActiveRounds() {
                 prizePool !== undefined && prizePool > 0n
                   ? `${formatEther(prizePool)} LINK`
                   : "—",
-              laneCount: 3,
+              laneCount: PARIMUTUEL_LANE_COUNT,
               status,
             }}
           />

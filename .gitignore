@@ -19,10 +19,12 @@ dist/
 # CRE
 cre/**/node_modules/
 cre/**/.cre/
+cre/**/.cre_build_tmp.js
 
 # IDE
 .idea/
 .vscode/
+*.tsbuildinfo
 
 # OS
 .DS_Store

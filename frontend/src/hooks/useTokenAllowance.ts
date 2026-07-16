@@ -6,11 +6,13 @@ import { erc20Abi, isDeployed } from "@/lib/contracts";
 
 export function useTokenAllowance(
   token: Address | undefined,
-  spender: Address | undefined
+  spender: Address | undefined,
+  chainId?: number,
 ) {
   const { address: owner } = useAccount();
 
   return useReadContract({
+    chainId,
     address: token,
     abi: erc20Abi,
     functionName: "allowance",

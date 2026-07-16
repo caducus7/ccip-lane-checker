@@ -1,22 +1,34 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "CCIP Lane Checker testnet deployments",
+  "description": "Schema v1.2 — per-chain deploy metadata and keystore workflow fields.",
   "type": "object",
   "required": ["version", "chains"],
   "properties": {
     "version": { "type": "string" },
     "updatedAt": { "type": ["string", "null"], "format": "date-time" },
     "notes": { "type": "string" },
+    "deployDefaults": {
+      "type": "object",
+      "properties": {
+        "keystoreAccount": { "type": "string" },
+        "forgeBroadcastFlags": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
     "chains": {
       "type": "object",
       "additionalProperties": {
         "type": "object",
-        "required": ["chainId", "chainSelector", "infra", "contracts"],
+        "required": ["chainId", "chainSelector", "infra", "contracts", "deploy"],
         "properties": {
           "chainId": { "type": "integer" },
           "chainSelector": { "type": "string" },
           "infra": {
             "type": "object",
+            "required": ["ccipRouter", "linkToken", "vrfCoordinator", "vrfKeyHash", "creForwarder"],
             "properties": {
               "ccipRouter": { "type": "string" },
               "linkToken": { "type": "string" },
@@ -38,14 +50,65 @@
             "type": "object",
             "properties": {
               "creForwarder": { "type": "string" },
-              "hopRecorder": { "type": "string" },
+              "hopRecorder": { "type": ["string", "null"] },
               "remoteExecutors": {
                 "type": "object",
-                "additionalProperties": { "type": "string" }
+                "additionalProperties": { "type": ["string", "null"] }
               },
               "remoteLaneTokens": {
                 "type": "object",
-                "additionalProperties": { "type": "string" }
+                "additionalProperties": { "type": ["string", "null"] }
+              }
+            }
+          },
+          "deploy": {
+            "type": "object",
+            "required": [
+              "deployChain",
+              "rpcEnv",
+              "forgeVerifyChain",
+              "creChainSelectorName",
+              "isHomeChain"
+            ],
+            "properties": {
+              "deployChain": {
+                "type": "string",
+                "description": "DEPLOY_CHAIN value for DeployAll.s.sol"
+              },
+              "rpcEnv": {
+                "type": "string",
+                "description": "Shell env var holding JSON-RPC URL"
+              },
+              "forgeVerifyChain": {
+                "type": "string",
+                "description": "foundry.toml [etherscan] key passed to --verify"
+              },
+              "creChainSelectorName": {
+                "type": "string",
+                "description": "CRE EVMClient chain selector name"
+              },
+              "isHomeChain": {
+                "type": "boolean",
+                "description": "True when this chain hosts the canonical LaneController"
+              },
+              "nativeFundExecutorEth": { "type": "string" },
+              "nativeFundLaneTokenEth": { "type": "string" },
+              "hopSenderCreConfig": {
+                "type": "string",
+                "description": "Relative path under cre/lane-checker-cre/hop-sender/"
+              },
+              "wirePhaseRemoteEnv": {
+                "type": "object",
+                "properties": {
+                  "executors": {
+                    "type": "array",
+                    "items": { "type": "string" }
+                  },
+                  "laneTokens": {
+                    "type": "array",
+                    "items": { "type": "string" }
+                  }
+                }
               }
             }
           }

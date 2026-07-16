@@ -1,5 +1,5 @@
 {
-  "laneControllerAddress": "0x0000000000000000000000000000000000000001",
+  "laneControllerAddress": "0xf7a6CAa15Fa51d30439e32E220A507F04611544a",
   "controllerChainSelectorName": "ethereum-testnet-sepolia",
   "gasLimit": "500000",
   "chains": [

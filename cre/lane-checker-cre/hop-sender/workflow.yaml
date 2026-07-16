@@ -6,6 +6,22 @@ staging-settings:
     config-path: "./config.staging.json"
     secrets-path: ""
 
+staging-arbitrum-sepolia-settings:
+  user-workflow:
+    workflow-name: "hop-sender-staging-arbitrum"
+  workflow-artifacts:
+    workflow-path: "./main.ts"
+    config-path: "./config.staging.arbitrum-sepolia.json"
+    secrets-path: ""
+
+staging-base-sepolia-settings:
+  user-workflow:
+    workflow-name: "hop-sender-staging-base"
+  workflow-artifacts:
+    workflow-path: "./main.ts"
+    config-path: "./config.staging.base-sepolia.json"
+    secrets-path: ""
+
 production-settings:
   user-workflow:
     workflow-name: "hop-sender-production"

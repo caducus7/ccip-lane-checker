@@ -2,9 +2,9 @@
   "schedule": "0 * * * * *",
   "laneControllerAddress": "0xf7a6CAa15Fa51d30439e32E220A507F04611544a",
   "controllerChainSelectorName": "ethereum-testnet-sepolia",
-  "laneExecutorAddress": "0xbd8b72eB19Fea6e25597F40a63Ea1DeF3C600990",
-  "executorChainSelectorName": "ethereum-testnet-sepolia",
+  "laneExecutorAddress": "0xa159214985Bbb3f7e7A0F986C723262914150ac7",
+  "executorChainSelectorName": "ethereum-testnet-sepolia-arbitrum-1",
   "laneCount": 2,
-  "isOriginChain": true,
+  "isOriginChain": false,
   "gasLimit": "500000"
 }
