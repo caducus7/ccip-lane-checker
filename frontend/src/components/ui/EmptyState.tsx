@@ -75,8 +75,8 @@ export function DeploymentBanner({
   return (
     <EmptyState
       variant="warning"
-      title={`${contractName} not deployed`}
-      description="Testnet addresses are empty in contracts/deployments/testnet.json. Demo data is shown until Step 4 deploy fills live addresses."
+      title={`${contractName} not available`}
+      description="No live address resolved for this contract. Check contracts/deployments/testnet.json, or set NEXT_PUBLIC_* overrides in frontend/.env.local. Until then, demo data is shown."
       action={{ label: "View benchmarks", href: "/lanes" }}
     />
   );

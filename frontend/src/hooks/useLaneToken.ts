@@ -12,8 +12,10 @@ import {
   erc20Abi,
   getDeploymentByChainId,
   getLaneTokenAddress,
+  hasLaneTokenDeployment,
   isDeployed,
   laneTokenAbi,
+  resolveLaneToken,
 } from "@/lib/contracts";
 import { chainIdToSelector } from "@/lib/chains";
 import type { SupportedChainId } from "@/lib/chains";
@@ -24,30 +26,32 @@ export type LaneTokenAction = "approve" | "deposit" | "start" | null;
 
 export function useLaneTokenBalance() {
   const { address, chainId } = useAccount();
-  const laneToken = chainId ? getLaneTokenAddress(chainId) : undefined;
+  const resolved = resolveLaneToken(chainId);
 
   return useReadContract({
-    address: laneToken,
+    chainId: resolved.chainId,
+    address: resolved.address,
     abi: laneTokenAbi,
     functionName: "s_balances",
     args: address ? [address] : undefined,
     query: {
-      enabled: !!address && isDeployed(laneToken),
+      enabled: !!address && isDeployed(resolved.address),
     },
   });
 }
 
 export function useGameRound(gameId: bigint | undefined) {
   const { chainId } = useAccount();
-  const laneToken = chainId ? getLaneTokenAddress(chainId) : undefined;
+  const resolved = resolveLaneToken(chainId);
 
   return useReadContract({
-    address: laneToken,
+    chainId: resolved.chainId,
+    address: resolved.address,
     abi: laneTokenAbi,
     functionName: "getGameRound",
     args: gameId !== undefined ? [gameId] : undefined,
     query: {
-      enabled: gameId !== undefined && isDeployed(laneToken),
+      enabled: gameId !== undefined && isDeployed(resolved.address),
       refetchInterval: 5_000,
     },
   });
@@ -55,28 +59,38 @@ export function useGameRound(gameId: bigint | undefined) {
 
 export function useGameCounter() {
   const { chainId } = useAccount();
-  const laneToken = chainId ? getLaneTokenAddress(chainId) : undefined;
+  const resolved = resolveLaneToken(chainId);
 
   return useReadContract({
-    address: laneToken,
+    chainId: resolved.chainId,
+    address: resolved.address,
     abi: laneTokenAbi,
     functionName: "s_gameCounter",
     query: {
-      enabled: isDeployed(laneToken),
+      enabled: isDeployed(resolved.address),
       refetchInterval: 10_000,
     },
   });
 }
 
 export function useLaneTokenActions() {
-  const { chainId } = useAccount();
-  const laneToken = chainId ? getLaneTokenAddress(chainId) : undefined;
-  const deployment = chainId ? getDeploymentByChainId(chainId) : undefined;
+  const { chainId, isConnected } = useAccount();
+  const onChainToken =
+    chainId !== undefined ? getLaneTokenAddress(chainId) : undefined;
+  const readyOnCurrentChain = isDeployed(onChainToken);
+  const contractsLive = hasLaneTokenDeployment();
+
+  const deployment =
+    chainId !== undefined ? getDeploymentByChainId(chainId) : undefined;
   const underlyingToken = deployment?.underlyingToken;
-  const { data: decimals } = useTokenDecimals(underlyingToken);
+  const { data: decimals } = useTokenDecimals(
+    underlyingToken,
+    readyOnCurrentChain ? chainId : undefined,
+  );
   const { data: allowance, refetch: refetchAllowance } = useTokenAllowance(
     underlyingToken,
-    laneToken
+    onChainToken,
+    readyOnCurrentChain ? chainId : undefined,
   );
 
   const [pendingAction, setPendingAction] = useState<LaneTokenAction>(null);
@@ -117,26 +131,36 @@ export function useLaneTokenActions() {
   const approveUnderlying = (amount: string) => {
     if (
       !underlyingToken ||
-      !laneToken ||
-      !isDeployed(laneToken) ||
-      decimals === undefined
+      !onChainToken ||
+      !readyOnCurrentChain ||
+      decimals === undefined ||
+      chainId === undefined
     ) {
       return;
     }
     setPendingAction("approve");
     writeContract({
+      chainId,
       address: underlyingToken,
       abi: erc20Abi,
       functionName: "approve",
-      args: [laneToken, parseUnits(amount, decimals)],
+      args: [onChainToken, parseUnits(amount, decimals)],
     });
   };
 
   const deposit = (amount: string) => {
-    if (!laneToken || !isDeployed(laneToken) || decimals === undefined) return;
+    if (
+      !onChainToken ||
+      !readyOnCurrentChain ||
+      decimals === undefined ||
+      chainId === undefined
+    ) {
+      return;
+    }
     setPendingAction("deposit");
     writeContract({
-      address: laneToken,
+      chainId,
+      address: onChainToken,
       abi: laneTokenAbi,
       functionName: "deposit",
       args: [parseUnits(amount, decimals)],
@@ -146,12 +170,20 @@ export function useLaneTokenActions() {
   const startGame = (
     destChainId: SupportedChainId,
     amount: string,
-    maxHops: number
+    maxHops: number,
   ) => {
-    if (!laneToken || !isDeployed(laneToken) || decimals === undefined) return;
+    if (
+      !onChainToken ||
+      !readyOnCurrentChain ||
+      decimals === undefined ||
+      chainId === undefined
+    ) {
+      return;
+    }
     setPendingAction("start");
     writeContract({
-      address: laneToken,
+      chainId,
+      address: onChainToken,
       abi: laneTokenAbi,
       functionName: "startGame",
       args: [
@@ -182,7 +214,12 @@ export function useLaneTokenActions() {
     lastCompletedAction,
     needsApproval,
     allowance,
-    isDeployed: isDeployed(laneToken),
+    /** Manifest has LaneToken addresses (any chain). */
+    contractsLive,
+    /** Wallet is on a chain with a live LaneToken — required for writes. */
+    readyOnCurrentChain,
+    isConnected,
+    chainId,
     decimals,
   };
 }

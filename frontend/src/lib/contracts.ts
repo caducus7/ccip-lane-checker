@@ -53,7 +53,11 @@ function resolveAddress(
   fromDeployment: string | null | undefined,
   fromEnv: string | undefined
 ): Address {
-  const candidate = fromDeployment ?? fromEnv;
+  // Env override wins only when set to a real address; empty NEXT_PUBLIC_* must
+  // not wipe addresses from contracts/deployments/testnet.json.
+  const env = fromEnv?.trim();
+  const candidate =
+    env && /^0x[a-fA-F0-9]{40}$/.test(env) ? env : fromDeployment;
   if (!candidate || !/^0x[a-fA-F0-9]{40}$/.test(candidate)) {
     return ZERO;
   }
@@ -124,6 +128,11 @@ export function getHomeLaneController(): Address | undefined {
   return deployments.chains["ethereum-sepolia"].laneController;
 }
 
+/** Default Solo LaneToken (Sepolia) when wallet chain is unknown. */
+export function getHomeLaneToken(): Address | undefined {
+  return deployments.chains["ethereum-sepolia"].laneToken;
+}
+
 export function getLaneExecutorAddress(chainId: number): Address | undefined {
   return getDeploymentByChainId(chainId)?.laneExecutor;
 }
@@ -145,6 +154,30 @@ export function hasAnyDeployment(): boolean {
     (chain) =>
       isDeployed(chain.laneController) || isDeployed(chain.laneToken)
   );
+}
+
+/** True if any configured testnet has a LaneToken address. */
+export function hasLaneTokenDeployment(): boolean {
+  return Object.values(deployments.chains).some((chain) =>
+    isDeployed(chain.laneToken)
+  );
+}
+
+/**
+ * Resolve LaneToken for reads/writes.
+ * Prefer the wallet chain when it has a deployment; otherwise fall back to
+ * Sepolia so UI never treats live testnet.json as "not deployed".
+ */
+export function resolveLaneToken(
+  chainId: number | undefined
+): { address: Address | undefined; chainId: number } {
+  if (chainId !== undefined) {
+    const onChain = getLaneTokenAddress(chainId);
+    if (isDeployed(onChain)) {
+      return { address: onChain, chainId };
+    }
+  }
+  return { address: getHomeLaneToken(), chainId: HOME_CHAIN_ID };
 }
 
 /** Minimal ABI for LaneToken solo mode */

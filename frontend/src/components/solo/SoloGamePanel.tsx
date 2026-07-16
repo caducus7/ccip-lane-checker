@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { formatEther } from "viem";
+import { useSwitchChain } from "wagmi";
 import {
   useGameCounter,
   useLaneTokenActions,
@@ -10,16 +11,18 @@ import {
 import { HopProgress } from "@/components/solo/HopProgress";
 import type { SupportedChainId } from "@/lib/chains";
 import { CHAIN_LABELS, SUPPORTED_CHAINS } from "@/lib/chains";
-import { DeploymentBanner } from "@/components/ui/EmptyState";
+import { HOME_CHAIN_ID } from "@/lib/contracts";
+import { EmptyState } from "@/components/ui/EmptyState";
 import { TxFeedback } from "@/components/ui/TxFeedback";
 
 export function SoloGamePanel() {
   const [amount, setAmount] = useState("0.01");
   const [maxHops, setMaxHops] = useState(5);
   const [destChain, setDestChain] = useState<SupportedChainId>(
-    SUPPORTED_CHAINS[1].id
+    SUPPORTED_CHAINS[1].id,
   );
   const [activeGameId, setActiveGameId] = useState<bigint | undefined>();
+  const { switchChainAsync } = useSwitchChain();
 
   const { data: balance } = useLaneTokenBalance();
   const { data: gameCounter } = useGameCounter();
@@ -30,7 +33,10 @@ export function SoloGamePanel() {
     isPending,
     isConfirming,
     isSuccess,
-    isDeployed,
+    contractsLive,
+    readyOnCurrentChain,
+    isConnected,
+    chainId,
     hash,
     error,
     reset,
@@ -40,6 +46,7 @@ export function SoloGamePanel() {
   } = useLaneTokenActions();
 
   const isTxBusy = isPending || isConfirming;
+  const canWrite = contractsLive && readyOnCurrentChain;
   const insufficientAllowance = needsApproval(amount);
   const needsDepositApproval = insufficientAllowance;
 
@@ -63,8 +70,37 @@ export function SoloGamePanel() {
           </p>
         </div>
 
-        {!isDeployed && (
-          <DeploymentBanner contractName="LaneToken" />
+        {!contractsLive && (
+          <EmptyState
+            variant="warning"
+            title="LaneToken not available"
+            description="No live LaneToken address in contracts/deployments/testnet.json. Fill addresses after deploy, or set NEXT_PUBLIC_* overrides."
+            action={{ label: "View benchmarks", href: "/lanes" }}
+          />
+        )}
+
+        {contractsLive && !isConnected && (
+          <EmptyState
+            variant="info"
+            title="Connect wallet"
+            description="Connect on Ethereum Sepolia, Arbitrum Sepolia, or Base Sepolia to deposit LINK and start a solo challenge."
+          />
+        )}
+
+        {contractsLive && isConnected && !readyOnCurrentChain && (
+          <div className="border border-neon-amber/40 bg-neon-amber/10 px-4 py-3 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <p className="font-mono text-xs text-neon-amber">
+              Switch to a supported testnet to use Solo (you are on chain{" "}
+              {chainId ?? "—"}).
+            </p>
+            <button
+              type="button"
+              onClick={() => void switchChainAsync({ chainId: HOME_CHAIN_ID })}
+              className="shrink-0 px-3 py-2 font-mono text-[10px] uppercase tracking-wider border border-neon-amber text-neon-amber hover:bg-neon-amber/10"
+            >
+              Switch to {CHAIN_LABELS[HOME_CHAIN_ID as SupportedChainId]}
+            </button>
+          </div>
         )}
 
         <div className="space-y-3">
@@ -77,12 +113,12 @@ export function SoloGamePanel() {
               inputMode="decimal"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
-              disabled={!isDeployed || isTxBusy}
+              disabled={!canWrite || isTxBusy}
               className="mt-1 w-full border border-grid bg-asphalt px-3 py-2.5 font-mono text-sm text-white focus:border-neon-cyan outline-none disabled:opacity-40"
             />
           </label>
 
-          {isDeployed && needsDepositApproval && (
+          {canWrite && needsDepositApproval && (
             <button
               type="button"
               disabled={isTxBusy}
@@ -95,7 +131,7 @@ export function SoloGamePanel() {
             </button>
           )}
 
-          {isDeployed && !needsDepositApproval && (
+          {canWrite && !needsDepositApproval && (
             <p className="font-mono text-[10px] text-neon-lime/80 uppercase tracking-wider">
               ✓ LINK approved for deposit
             </p>
@@ -103,9 +139,7 @@ export function SoloGamePanel() {
 
           <button
             type="button"
-            disabled={
-              !isDeployed || isTxBusy || needsDepositApproval
-            }
+            disabled={!canWrite || isTxBusy || needsDepositApproval}
             onClick={() => deposit(amount)}
             className="w-full py-2.5 font-mono text-xs uppercase tracking-widest border border-grid hover:border-neon-cyan hover:text-neon-cyan transition-colors disabled:opacity-40"
           >
@@ -130,8 +164,10 @@ export function SoloGamePanel() {
           </span>
           <select
             value={destChain}
-            onChange={(e) => setDestChain(Number(e.target.value) as SupportedChainId)}
-            disabled={!isDeployed}
+            onChange={(e) =>
+              setDestChain(Number(e.target.value) as SupportedChainId)
+            }
+            disabled={!canWrite}
             className="mt-1 w-full border border-grid bg-asphalt px-3 py-2.5 font-mono text-sm text-white focus:border-neon-cyan outline-none disabled:opacity-40"
           >
             {SUPPORTED_CHAINS.map((chain) => (
@@ -152,14 +188,14 @@ export function SoloGamePanel() {
             max={8}
             value={maxHops}
             onChange={(e) => setMaxHops(Number(e.target.value))}
-            disabled={!isDeployed}
+            disabled={!canWrite}
             className="mt-2 w-full accent-neon-cyan disabled:opacity-40"
           />
         </label>
 
         <button
           type="button"
-          disabled={!isDeployed || isTxBusy}
+          disabled={!canWrite || isTxBusy}
           onClick={handleStart}
           className="w-full py-3 font-mono text-xs sm:text-sm uppercase tracking-[0.2em] bg-neon-cyan text-asphalt font-bold hover:shadow-[0_0_24px_rgba(0,245,212,0.35)] transition-shadow disabled:opacity-40"
         >

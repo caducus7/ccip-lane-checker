@@ -13,7 +13,7 @@ export default function LeaderboardPage() {
         </h1>
         <p className="mt-2 font-mono text-sm text-white/50 max-w-2xl">
           Solo challenge finishes and parimutuel race winners ranked by total
-          CCIP hop latency. On-chain history once contracts are live.
+          CCIP hop latency. On-chain history expands as rounds complete.
         </p>
       </header>
 

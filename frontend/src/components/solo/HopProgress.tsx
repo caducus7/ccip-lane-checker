@@ -55,7 +55,7 @@ export function HopProgress({ gameId, messageId }: HopProgressProps) {
       <div className="border border-grid bg-asphalt-50 p-6">
         <p className="font-mono text-sm text-neon-amber">
           Game #{gameId.toString()} — awaiting on-chain data
-          {isError ? " (contract not deployed)" : ""}
+          {isError ? " (RPC / chain mismatch — switch network)" : ""}
         </p>
         <MessageStatusPanel
           messageId={messageId}
